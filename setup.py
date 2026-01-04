@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-FastAPI Boilerplate Setup Script
+"""FastAPI Boilerplate Setup Script.
 
 Automates copying the correct configuration files for different deployment scenarios.
 """
@@ -29,7 +28,7 @@ DEPLOYMENTS = {
 
 
 def show_help():
-    """Display help information"""
+    """Display help information."""
     print("FastAPI Boilerplate Setup")
     print("=" * 25)
     print()
@@ -47,7 +46,7 @@ def show_help():
 
 
 def copy_files(deployment_type: str):
-    """Copy configuration files for the specified deployment type"""
+    """Copy configuration files for the specified deployment type."""
     if deployment_type not in DEPLOYMENTS:
         print(f"❌ Unknown deployment type: {deployment_type}")
         print()
@@ -115,7 +114,7 @@ def copy_files(deployment_type: str):
 
 
 def interactive_setup():
-    """Interactive setup when no arguments provided"""
+    """Interactive setup when no arguments provided."""
     print("FastAPI Boilerplate Setup")
     print("=" * 25)
     print()
@@ -152,7 +151,7 @@ def interactive_setup():
 
 
 def main():
-    """Main entry point"""
+    """Main entry point."""
     if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
         show_help()
         return

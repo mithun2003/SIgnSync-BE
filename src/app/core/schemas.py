@@ -1,6 +1,6 @@
 import uuid as uuid_pkg
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_serializer
 from uuid6 import uuid7
@@ -84,3 +84,23 @@ class TokenBlacklistCreate(TokenBlacklistBase):
 
 class TokenBlacklistUpdate(TokenBlacklistBase):
     pass
+
+
+class CommonResponse(BaseModel):
+    success: bool = True
+    message: str = "Success"
+    data: Any = None
+    query_generated_time: float | None = Field(
+        default=datetime.timestamp(datetime.now()), serialization_alias="queryGeneratedTime"
+    )
+
+
+class LoginData(BaseModel):
+    access_token: str
+    refresh_token: str | None = None
+    token_type: str = "bearer"
+    user_role: Literal["user", "admin"] = "user"
+
+
+class LoginResponse(CommonResponse):
+    data: LoginData

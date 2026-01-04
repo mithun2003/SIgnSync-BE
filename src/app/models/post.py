@@ -11,7 +11,7 @@ from ..core.db.database import Base
 class Post(Base):
     __tablename__ = "post"
 
-    id: Mapped[int] = mapped_column("id", autoincrement=True, nullable=False, unique=True, primary_key=True, init=False)
+    id: Mapped[int] = mapped_column(autoincrement=True, nullable=False, unique=True, primary_key=True, init=False)
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
     title: Mapped[str] = mapped_column(String(30))
     text: Mapped[str] = mapped_column(String(63206))

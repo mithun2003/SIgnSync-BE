@@ -17,7 +17,7 @@ from ...schemas.user import UserCreate, UserCreateInternal, UserRead, UserTierUp
 router = APIRouter(tags=["users"])
 
 
-@router.post("/user", response_model=UserRead, status_code=201)
+@router.post("/auth/user", response_model=UserRead, status_code=201)
 async def write_user(
     request: Request, user: UserCreate, db: Annotated[AsyncSession, Depends(async_get_db)]
 ) -> dict[str, Any]:

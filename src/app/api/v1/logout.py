@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Cookie, Depends, Response
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,14 +6,14 @@ from ...core.db.database import async_get_db
 from ...core.exceptions.http_exceptions import UnauthorizedException
 from ...core.security import blacklist_tokens, oauth2_scheme
 
-router = APIRouter(tags=["login"])
+router = APIRouter(tags=["login"], prefix="/auth")
 
 
 @router.post("/logout")
 async def logout(
     response: Response,
     access_token: str = Depends(oauth2_scheme),
-    refresh_token: Optional[str] = Cookie(None, alias="refresh_token"),
+    refresh_token: str | None = Cookie(None, alias="refresh_token"),
     db: AsyncSession = Depends(async_get_db),
 ) -> dict[str, str]:
     try:

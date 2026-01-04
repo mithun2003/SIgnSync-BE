@@ -8,12 +8,12 @@ from ..core.schemas import PersistentDeletion, TimestampSchema, UUIDSchema
 
 class UserBase(BaseModel):
     name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
-    username: Annotated[str, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userson"])]
+    username: Annotated[str, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9_]+$", examples=["userson"])]
     email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
 
 
 class User(TimestampSchema, UserBase, UUIDSchema, PersistentDeletion):
-    profile_image_url: Annotated[str, Field(default="https://www.profileimageurl.com")]
+    profile_image_url: Annotated[str, Field(default="https://www.profileimageurl.com")] | None = None
     hashed_password: str
     is_superuser: bool = False
     tier_id: int | None = None
@@ -25,7 +25,7 @@ class UserRead(BaseModel):
     name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
     username: Annotated[str, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userson"])]
     email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
-    profile_image_url: str
+    profile_image_url: str | None
     tier_id: int | None
 
 

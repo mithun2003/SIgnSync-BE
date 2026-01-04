@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.config import settings
 from ...core.db.database import async_get_db
 from ...core.exceptions.http_exceptions import UnauthorizedException
-from ...core.schemas import Token
+from ...core.schemas import LoginResponse
 from ...core.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     TokenType,
@@ -18,10 +18,10 @@ from ...core.security import (
     verify_token,
 )
 
-router = APIRouter(tags=["login"])
+router = APIRouter(tags=["login"], prefix="/auth")
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResponse)
 async def login_for_access_token(
     response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -38,10 +38,24 @@ async def login_for_access_token(
     max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 
     response.set_cookie(
-        key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="lax", max_age=max_age
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=max_age,
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return LoginResponse(
+        success=True,
+        message="Login successful",
+        data={
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user_role": "admin" if user["is_superuser"] else "user",
+        },
+    )
 
 
 @router.post("/refresh")
