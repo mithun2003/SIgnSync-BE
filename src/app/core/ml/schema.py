@@ -4,8 +4,8 @@ from ...core.schemas import CommonResponse
 
 
 class PredictData(BaseModel):
-    labels: str
-    confidences: float
+    label: str
+    confidence: float
 
 
 class PredictResponse(CommonResponse):

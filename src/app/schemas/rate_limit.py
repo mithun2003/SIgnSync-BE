@@ -22,7 +22,7 @@ class RateLimitBase(BaseModel):
 
 class RateLimit(TimestampSchema, RateLimitBase):
     tier_id: int
-    name: Annotated[str | None, Field(default=None, examples=["users:5:60"])]
+    name: Annotated[str | None, Field(None, examples=["users:5:60"])]
 
 
 class RateLimitRead(RateLimitBase):
@@ -34,7 +34,7 @@ class RateLimitRead(RateLimitBase):
 class RateLimitCreate(RateLimitBase):
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str | None, Field(default=None, examples=["api_v1_users:5:60"])]
+    name: Annotated[str | None, Field(None, examples=["api_v1_users:5:60"])]
 
 
 class RateLimitCreateInternal(RateLimitCreate):
@@ -42,7 +42,7 @@ class RateLimitCreateInternal(RateLimitCreate):
 
 
 class RateLimitUpdate(BaseModel):
-    path: str | None = Field(default=None)
+    path: str | None = Field(None)
     limit: int | None = None
     period: int | None = None
     name: str | None = None

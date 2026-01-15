@@ -3,17 +3,20 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from ..core.schemas import PersistentDeletion, TimestampSchema, UUIDSchema
+from ..core.schemas import CommonResponse, PersistentDeletion, TimestampSchema, UUIDSchema
 
 
 class UserBase(BaseModel):
     name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
-    username: Annotated[str, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9_]+$", examples=["userson"])]
+    username: Annotated[
+        str,
+        Field(min_length=2, max_length=20, pattern=r"^[a-z0-9_]+$", examples=["userson"]),
+    ]
     email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
 
 
 class User(TimestampSchema, UserBase, UUIDSchema, PersistentDeletion):
-    profile_image_url: Annotated[str, Field(default="https://www.profileimageurl.com")] | None = None
+    profile_image_url: Annotated[str | None, Field(default="https://www.profileimageurl.com")] = None
     hashed_password: str
     is_superuser: bool = False
     tier_id: int | None = None
@@ -23,7 +26,10 @@ class UserRead(BaseModel):
     id: int
 
     name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
-    username: Annotated[str, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userson"])]
+    username: Annotated[
+        str,
+        Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userson"]),
+    ]
     email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
     profile_image_url: str | None
     tier_id: int | None
@@ -32,7 +38,13 @@ class UserRead(BaseModel):
 class UserCreate(UserBase):
     model_config = ConfigDict(extra="forbid")
 
-    password: Annotated[str, Field(pattern=r"^.{8,}|[0-9]+|[A-Z]+|[a-z]+|[^a-zA-Z0-9]+$", examples=["Str1ngst!"])]
+    password: Annotated[
+        str,
+        Field(
+            pattern=r"^.{8,}|[0-9]+|[A-Z]+|[a-z]+|[^a-zA-Z0-9]+$",
+            examples=["Str1ngst!"],
+        ),
+    ]
 
 
 class UserCreateInternal(UserBase):
@@ -42,17 +54,20 @@ class UserCreateInternal(UserBase):
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str | None, Field(min_length=2, max_length=30, examples=["User Userberg"], default=None)]
+    name: Annotated[str | None, Field(min_length=2, max_length=30, examples=["User Userberg"])] = None
     username: Annotated[
-        str | None, Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userberg"], default=None)
-    ]
-    email: Annotated[EmailStr | None, Field(examples=["user.userberg@example.com"], default=None)]
+        str | None,
+        Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userberg"]),
+    ] = None
+
+    email: Annotated[EmailStr | None, Field(examples=["user.userberg@example.com"])] = None
     profile_image_url: Annotated[
         str | None,
         Field(
-            pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.profileimageurl.com"], default=None
+            pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$",
+            examples=["https://www.profileimageurl.com"],
         ),
-    ]
+    ] = None
 
 
 class UserUpdateInternal(UserUpdate):
@@ -72,3 +87,7 @@ class UserDelete(BaseModel):
 
 class UserRestoreDeleted(BaseModel):
     is_deleted: bool
+
+
+class UserResponse(CommonResponse):
+    data: UserRead

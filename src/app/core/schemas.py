@@ -30,7 +30,7 @@ class UUIDSchema(BaseModel):
 
 class TimestampSchema(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
-    updated_at: datetime | None = Field(default=None)
+    updated_at: datetime | None = Field(None)
 
     @field_serializer("created_at")
     def serialize_dt(self, created_at: datetime | None, _info: Any) -> str | None:
@@ -48,7 +48,7 @@ class TimestampSchema(BaseModel):
 
 
 class PersistentDeletion(BaseModel):
-    deleted_at: datetime | None = Field(default=None)
+    deleted_at: datetime | None = Field(None)
     is_deleted: bool = False
 
     @field_serializer("deleted_at")
@@ -87,11 +87,11 @@ class TokenBlacklistUpdate(TokenBlacklistBase):
 
 
 class CommonResponse(BaseModel):
-    success: bool = True
+    status_code: Literal[200, 401, 404] = 200
     message: str = "Success"
     data: Any = None
-    query_generated_time: float | None = Field(
-        default=datetime.timestamp(datetime.now()), serialization_alias="queryGeneratedTime"
+    query_generated_time: float = Field(
+        default_factory=lambda: datetime.now().timestamp(), serialization_alias="queryGeneratedTime"
     )
 
 

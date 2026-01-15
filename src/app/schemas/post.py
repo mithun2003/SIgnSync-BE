@@ -14,7 +14,7 @@ class PostBase(BaseModel):
 class Post(TimestampSchema, PostBase, UUIDSchema, PersistentDeletion):
     media_url: Annotated[
         str | None,
-        Field(pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"], default=None),
+        Field(None, pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"]),
     ]
     created_by_user_id: int
 
@@ -25,7 +25,7 @@ class PostRead(BaseModel):
     text: Annotated[str, Field(min_length=1, max_length=63206, examples=["This is the content of my post."])]
     media_url: Annotated[
         str | None,
-        Field(examples=["https://www.postimageurl.com"], default=None),
+        Field(None, examples=["https://www.postimageurl.com"]),
     ]
     created_by_user_id: int
     created_at: datetime
@@ -36,7 +36,7 @@ class PostCreate(PostBase):
 
     media_url: Annotated[
         str | None,
-        Field(pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"], default=None),
+        Field(None, pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"]),
     ]
 
 
@@ -47,14 +47,14 @@ class PostCreateInternal(PostCreate):
 class PostUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: Annotated[str | None, Field(min_length=2, max_length=30, examples=["This is my updated post"], default=None)]
+    title: Annotated[str | None, Field(None, min_length=2, max_length=30, examples=["This is my updated post"])]
     text: Annotated[
         str | None,
-        Field(min_length=1, max_length=63206, examples=["This is the updated content of my post."], default=None),
+        Field(None, min_length=1, max_length=63206, examples=["This is the updated content of my post."]),
     ]
     media_url: Annotated[
         str | None,
-        Field(pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"], default=None),
+        Field(None, pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$", examples=["https://www.postimageurl.com"]),
     ]
 
 

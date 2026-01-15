@@ -13,7 +13,7 @@ repos:
       - id: check-executables-have-shebangs
       - id: check-case-conflict
       - id: check-added-large-files
-        exclude: ^(.*\/dummy.*|.*\.json|.*\.h5)$
+        exclude: ^(.*\/dummy.*|.*\.json|.*\.keras|.*\.task)$
         args: ["--maxkb=750", "--enforce-all"]
       - id: detect-private-key
       - id: check-merge-conflict
