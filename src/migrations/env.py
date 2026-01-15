@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import os
 import pkgutil
 from logging.config import fileConfig
 
@@ -14,6 +15,15 @@ from app.core.db.database import Base
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+
+database_url = os.getenv("DATABASE_URL")
+
+if database_url and database_url.startswith("postgresql+asyncpg"):
+    database_url = database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+
+config.set_main_option("sqlalchemy.url", database_url)
+
 
 config.set_main_option(
     "sqlalchemy.url",

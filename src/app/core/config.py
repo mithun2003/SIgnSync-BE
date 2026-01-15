@@ -57,7 +57,7 @@ class PostgresSettings(DatabaseSettings):
     POSTGRES_DB: str = "postgres"
     POSTGRES_SYNC_PREFIX: str = "postgresql://"
     POSTGRES_ASYNC_PREFIX: str = "postgresql+asyncpg://"
-    POSTGRES_URL: str | None = None
+    DATABASE_URL: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
