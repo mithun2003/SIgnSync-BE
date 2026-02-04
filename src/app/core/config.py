@@ -80,6 +80,7 @@ class TestSettings(BaseSettings): ...
 class RedisCacheSettings(BaseSettings):
     REDIS_CACHE_HOST: str = "localhost"
     REDIS_CACHE_PORT: int = 6379
+    REDIS_CACHE_ENABLED: bool = True
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -92,11 +93,14 @@ class ClientSideCacheSettings(BaseSettings):
 
 
 class RedisQueueSettings(BaseSettings):
-    REDIS_QUEUE_HOST: str = "localhost"
+    REDIS_QUEUE_ENABLED: bool = True
+    REDIS_QUEUE_HOST: str = "redis"
     REDIS_QUEUE_PORT: int = 6379
 
 
+
 class RedisRateLimiterSettings(BaseSettings):
+    REDIS_RATE_LIMIT_ENABLED: bool = True
     REDIS_RATE_LIMIT_HOST: str = "localhost"
     REDIS_RATE_LIMIT_PORT: int = 6379
 

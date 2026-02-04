@@ -33,7 +33,7 @@ async def predict_sign_image(file: UploadFile = File(...)):
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("✅ Client connected to WebSocket")
+    print("Client connected to WebSocket")
 
     try:
         while True:
@@ -57,9 +57,9 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json(response)
 
     except WebSocketDisconnect:
-        print("❌ Client disconnected")
+        print("Client disconnected")
     except Exception as e:
-        print(f"⚠️ WebSocket Error: {e}")
+        print(f"WebSocket Error: {e}")
         try:
             await websocket.close()
         except Exception:
