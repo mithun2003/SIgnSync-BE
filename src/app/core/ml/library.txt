@@ -1,0 +1,13 @@
+pip install tensorflow mediapipe opencv-python numpy matplotlib seaborn scikit-learn kagglehub
+
+import tensorflow as tf
+import mediapipe as mp
+import cv2
+import numpy as np
+import matplotlib
+import seaborn
+import sklearn
+
+print("✅ All libraries installed successfully!")
+print(f"TensorFlow Version: {tf.__version__}")
+print(f"OpenCV Version: {cv2.__version__}")
