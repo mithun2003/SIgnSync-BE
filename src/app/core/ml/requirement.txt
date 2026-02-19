@@ -1,0 +1,23 @@
+# ASL Sign Language Training - Local Requirements
+# For GPU (recommended):
+tensorflow[and-cuda]==2.16.1
+
+# For CPU only (if no GPU):
+# tensorflow==2.16.1
+
+# Core dependencies
+mediapipe==0.10.11
+opencv-python==4.9.0.80
+numpy==1.26.4
+kagglehub==0.2.9
+
+# Visualization & metrics
+matplotlib==3.8.4
+seaborn==0.13.2
+scikit-learn==1.4.2
+
+# Progress bars (optional but nice)
+tqdm==4.66.2
+
+echo 'export TF_ENABLE_ONEDNN_OPTS=0' >> ~/.bashrc
+source ~/.bashrc
