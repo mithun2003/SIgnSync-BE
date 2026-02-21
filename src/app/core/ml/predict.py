@@ -64,7 +64,7 @@ def load_ml_model():
 
 
 # Load on module import
-load_ml_model()
+# load_ml_model()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PREPROCESSING FUNCTIONS

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from .admin.initialize import create_admin_interface
 from .api import router
 from .core.config import settings
+from .core.ml.predict import load_ml_model
 from .core.setup import create_application, lifespan_factory
 
 admin = create_admin_interface()
@@ -19,6 +20,13 @@ async def lifespan_with_admin(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Run the default lifespan initialization and our admin initialization
     async with default_lifespan(app):
+        # 🔥 Load ML model here
+        print("🚀 Loading ML model at startup...")
+        success = load_ml_model()
+        if success:
+            print("✅ ML Model loaded successfully")
+        else:
+            print("❌ ML Model failed to load")
         # Initialize admin interface if it exists
         if admin:
             # Initialize admin database and setup
