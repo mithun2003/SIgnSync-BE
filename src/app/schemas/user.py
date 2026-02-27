@@ -7,12 +7,13 @@ from ..core.schemas import CommonResponse, PersistentDeletion, TimestampSchema, 
 
 
 class UserBase(BaseModel):
-    name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
+    first_name: Annotated[str | None, Field(max_length=50, examples=["Admin"])] = None
+    last_name: Annotated[str | None, Field(max_length=50, examples=["User"])] = None
     username: Annotated[
         str,
         Field(min_length=2, max_length=20, pattern=r"^[a-z0-9_]+$", examples=["userson"]),
     ]
-    email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
+    email: Annotated[EmailStr, Field(examples=["userson@example.com"])]
 
 
 class User(TimestampSchema, UserBase, UUIDSchema, PersistentDeletion):
@@ -24,14 +25,15 @@ class User(TimestampSchema, UserBase, UUIDSchema, PersistentDeletion):
 
 class UserRead(BaseModel):
     id: int
-
-    name: Annotated[str, Field(min_length=2, max_length=30, examples=["User Userson"])]
-    username: Annotated[
-        str,
-        Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userson"]),
-    ]
-    email: Annotated[EmailStr, Field(examples=["user.userson@example.com"])]
+    first_name: str | None
+    last_name: str | None
+    username: str
+    email: EmailStr
     profile_image_url: str | None
+    bio: str | None
+    country: str | None
+    language: str
+    two_factor_enabled: bool
     tier_id: int | None
 
 
@@ -54,20 +56,15 @@ class UserCreateInternal(UserBase):
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str | None, Field(min_length=2, max_length=30, examples=["User Userberg"])] = None
-    username: Annotated[
-        str | None,
-        Field(min_length=2, max_length=20, pattern=r"^[a-z0-9]+$", examples=["userberg"]),
-    ] = None
-
-    email: Annotated[EmailStr | None, Field(examples=["user.userberg@example.com"])] = None
-    profile_image_url: Annotated[
-        str | None,
-        Field(
-            pattern=r"^(https?|ftp)://[^\s/$.?#].[^\s]*$",
-            examples=["https://www.profileimageurl.com"],
-        ),
-    ] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
+    email: EmailStr | None = None
+    bio: str | None = None
+    country: str | None = None
+    language: str | None = None
+    two_factor_enabled: bool | None = None
+    profile_image_url: str | None = None
 
 
 class UserUpdateInternal(UserUpdate):
