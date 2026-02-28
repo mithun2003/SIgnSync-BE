@@ -100,7 +100,6 @@ logger = logging.getLogger(__name__)
 
 async def create_first_user(session: AsyncSession) -> None:
     try:
-        name = settings.ADMIN_NAME
         email = settings.ADMIN_EMAIL
         username = settings.ADMIN_USERNAME
         hashed_password = get_password_hash(settings.ADMIN_PASSWORD)
@@ -113,7 +112,6 @@ async def create_first_user(session: AsyncSession) -> None:
             return
 
         user = User(
-            name=name,
             email=email,
             username=username,
             hashed_password=hashed_password,
@@ -121,7 +119,6 @@ async def create_first_user(session: AsyncSession) -> None:
             is_active=True,
             created_at=datetime.now(UTC),
         )
-
         session.add(user)
         await session.commit()
 
