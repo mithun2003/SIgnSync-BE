@@ -22,11 +22,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
 
-    first_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    last_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    bio: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    country: Mapped[str | None] = mapped_column(String(5), nullable=True)
-
+    first_name: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    last_name: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    bio: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    country: Mapped[str | None] = mapped_column(String(5), nullable=True, default=None)
     language: Mapped[str] = mapped_column(String(5), default="en")
     two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 

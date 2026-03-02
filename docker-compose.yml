@@ -12,6 +12,7 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
+      - media-data:/app/src/media 
     environment:
       - PYTHONPATH=/app/src
     mem_limit: 512m
@@ -64,3 +65,4 @@ services:
 volumes:
   postgres-data:
   pgadmin-data:
+  media-data:
