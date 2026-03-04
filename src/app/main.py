@@ -23,12 +23,12 @@ async def lifespan_with_admin(app: FastAPI) -> AsyncGenerator[None, None]:
     # Run the default lifespan initialization and our admin initialization
     async with default_lifespan(app):
         # 🔥 Load ML model here
-        print("🚀 Loading ML model at startup...")
-        success = load_ml_model()
-        if success:
-            print("✅ ML Model loaded successfully")
-        else:
-            print("❌ ML Model failed to load")
+        # print("🚀 Loading ML model at startup...")
+        # success = load_ml_model()
+        # if success:
+        #     print("✅ ML Model loaded successfully")
+        # else:
+        #     print("❌ ML Model failed to load")
         # Initialize admin interface if it exists
         if admin:
             # Initialize admin database and setup

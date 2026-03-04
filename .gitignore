@@ -148,3 +148,5 @@ docker-compose.yml
 
 # Don't ignore files inside of script folder:
 !scripts/*
+
+media/

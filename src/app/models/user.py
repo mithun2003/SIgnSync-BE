@@ -43,3 +43,9 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     tier_id: Mapped[int | None] = mapped_column(ForeignKey("tier.id"), index=True, default=None)
+
+    # sign_detections = relationship(
+    #     "SignDetection",
+    #     back_populates="user",
+    #     lazy="selectin"
+    # )

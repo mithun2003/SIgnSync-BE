@@ -12,9 +12,12 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
-      - media-data:/app/src/media 
+      - media-data:/app/media 
     environment:
       - PYTHONPATH=/app/src
+      - TF_XLA_FLAGS=--tf_xla_enable_xla_devices=false
+      - TF_CPP_MIN_LOG_LEVEL=2
+      - CUDA_VISIBLE_DEVICES=-1
     mem_limit: 512m
 
   db:
@@ -32,18 +35,18 @@ services:
       timeout: 5s
       retries: 5
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    env_file:
-      - ./src/.env
-    ports:
-      - "5050:80"
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
-    mem_limit: 256m
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   env_file:
+  #     - ./src/.env
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   volumes:
+  #     - pgadmin-data:/var/lib/pgadmin
+  #   mem_limit: 256m
 
   create_superuser:
     build:
@@ -64,5 +67,5 @@ services:
 
 volumes:
   postgres-data:
-  pgadmin-data:
+  # pgadmin-data:
   media-data:

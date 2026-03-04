@@ -1,10 +1,15 @@
 """Sign Language Gesture Prediction Module Handles model loading and prediction for skeleton images."""
 
 import json
+import os
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 
@@ -33,8 +38,10 @@ model_loaded: bool = False
 
 
 def load_ml_model():
-    """Load the ML model and class names."""
     global model, class_names, model_loaded
+
+    if model_loaded and model is not None:
+        return True  # Already loaded
 
     if not MODEL_PATH.exists():
         print(f"❌ CRITICAL: Model not found at {MODEL_PATH}")
@@ -45,23 +52,22 @@ def load_ml_model():
         return False
 
     try:
-        # Load model
-        model = load_model(str(MODEL_PATH))
-        print(f"✅ Model loaded from: {MODEL_PATH}")
+        print("⚡ Loading ML model (lazy)...")
 
-        # Load class names from JSON
+        # IMPORTANT: compile=False speeds up loading
+        model = load_model(str(MODEL_PATH), compile=False)
+
         with open(CLASS_PATH) as f:
             class_names = json.load(f)
 
-        print(f"✅ Classes loaded: {len(class_names)} → {class_names}")
         model_loaded = True
+        print("✅ ML Model ready")
         return True
 
     except Exception as e:
         print(f"❌ Error loading model: {e}")
         model_loaded = False
         return False
-
 
 # Load on module import
 # load_ml_model()
@@ -136,8 +142,10 @@ def predict_sign(image_bytes: bytes) -> dict:
     global model, class_names, model_loaded
 
     # Check if model is loaded
+    # Lazy load model if needed
     if not model_loaded or model is None:
-        return {"label": "error", "confidence": 0.0}
+        if not load_ml_model():
+            return {"label": "error", "confidence": 0.0}
 
     try:
         # 1. Decode image bytes to numpy array

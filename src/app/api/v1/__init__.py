@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from .admin.users import router as admin_users_router
 from .auth import router as auth_router
+from .dashboard import router as dashboard_router
 from .health import router as health_router
 from .login import router as login_router
 from .logout import router as logout_router
@@ -22,8 +22,8 @@ router.include_router(predict_router)
 router.include_router(tasks_router)
 router.include_router(tiers_router)
 router.include_router(rate_limits_router)
+router.include_router(dashboard_router)
 
 router.include_router(auth_router)
 
 
-router.include_router(admin_users_router)
