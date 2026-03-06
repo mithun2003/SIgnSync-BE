@@ -12,6 +12,7 @@ from ...core.ml.predict import get_health_status, get_public_info, predict_sign
 from ...core.ml.schema import HealthResponse, PredictionData, PredictResponse, ServiceInfoResponse
 from ...core.security import TokenType, verify_token
 from ...crud.crud_users import crud_users
+from ..dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,10 @@ router = APIRouter(prefix="/predict", tags=["Prediction"])
 
 
 @router.post("/", response_model=PredictResponse)
-async def predict_sign_image(file: UploadFile = File(...)):
+async def predict_sign_image(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    file: UploadFile = File(...),
+):
     """Predict sign language gesture from skeleton image.
 
     **Expected input:** Skeleton image (white hand landmarks on black background)
@@ -66,7 +70,7 @@ async def predict_sign_image(file: UploadFile = File(...)):
 
 
 @router.get("/info", response_model=ServiceInfoResponse)
-async def get_service_info():
+async def get_service_info(current_user: Annotated[dict, Depends(get_current_user)]):
     """Get information about the prediction service.
 
     **Returns:**
@@ -78,7 +82,7 @@ async def get_service_info():
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check(current_user: Annotated[dict, Depends(get_current_user)]):
     """Health check endpoint for monitoring/load balancers."""
     return get_health_status()
 
@@ -114,7 +118,6 @@ async def websocket_prediction(
     if token_data is None:
         await websocket.close(code=4001, reason="Invalid or expired token")
         return
-
     if "@" in token_data.username_or_email:
         user = await crud_users.get(db=db, email=token_data.username_or_email, is_deleted=False)
     else:

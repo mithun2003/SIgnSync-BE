@@ -403,6 +403,20 @@ wheels = [
 ]
 
 [[package]]
+name = "cloudinary"
+version = "1.44.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "six" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/35/938a4cc3b5ac386184a8ea50e357cdbb4239c2744fc8c652c461674447e6/cloudinary-1.44.1.tar.gz", hash = "sha256:62d4374b79d5476de2a86cb6a1da709a5429e02aef474bfc5d99f3e38a1a62ff", size = 188225, upload-time = "2025-06-17T16:31:33.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/f0/518d151d3dfc009940947fe9b26cdf9f6e2fb9e4a29c12fe5b5ebe8aad65/cloudinary-1.44.1-py3-none-any.whl", hash = "sha256:b4785031179a5ec7010f46665e5c8fad2cae022c18405546f01d257e02f78b1c", size = 147808, upload-time = "2025-06-17T16:31:32.188Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2496,6 +2510,7 @@ dependencies = [
     { name = "arq" },
     { name = "asyncpg" },
     { name = "bcrypt" },
+    { name = "cloudinary" },
     { name = "crudadmin" },
     { name = "fastapi" },
     { name = "fastcrud" },
@@ -2542,6 +2557,7 @@ requires-dist = [
     { name = "arq", specifier = ">=0.25.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "bcrypt", specifier = ">=4.1.1" },
+    { name = "cloudinary", specifier = ">=1.40.0" },
     { name = "crudadmin", specifier = ">=0.4.2" },
     { name = "faker", marker = "extra == 'dev'", specifier = ">=26.0.0" },
     { name = "fastapi", specifier = ">=0.109.1" },

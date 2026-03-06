@@ -18,7 +18,7 @@ from ....models.sign_detection import SignDetection
 from ....models.user import User
 from ....schemas.admin import AdminDashboardResponse
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+router = APIRouter(prefix="/dashboard", tags=["Admin Dashboard"])
 
 
 # ─── HELPERS ─────────────────────────────────────────────
@@ -68,7 +68,7 @@ def _format_confidence(conf: float) -> str:
 
 
 @router.get(
-    "/dashboard",
+    "",
     response_model=AdminDashboardResponse,
     dependencies=[Depends(get_current_superuser)],
 )
