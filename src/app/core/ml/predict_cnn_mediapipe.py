@@ -1,3 +1,5 @@
+import logging
+
 from pathlib import Path
 
 import cv2
@@ -7,6 +9,8 @@ import tensorflow as tf
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+
+logger = logging.getLogger(__name__)
 
 # --- 1. CONFIGURATION ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,9 +24,9 @@ IMG_SIZE = (224, 224)
 # Load CNN (The Sign Recognizer)
 try:
     model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ CNN Model loaded")
+    logger.info("CNN model loaded successfully")
 except Exception as e:
-    print(f"❌ CNN Load Error: {e}")
+    logger.exception("CNN model load error: %s", e)
     model = None
 
 # Load Class Names
@@ -30,7 +34,7 @@ try:
     with open(CLASS_PATH) as f:
         CLASS_NAMES = [line.strip() for line in f]
 except Exception as e:
-    print(f"❌ Class Name Load Error: {e}")
+    logger.exception("Class name load error: %s", e)
     CLASS_NAMES = []
 
 # Load MediaPipe (The Hand Cropper)
@@ -42,9 +46,9 @@ try:
         min_hand_detection_confidence=0.3,  # Low threshold to catch difficult angles
     )
     detector = vision.HandLandmarker.create_from_options(options)
-    print("✅ MediaPipe Cropper loaded")
+    logger.info("MediaPipe hand landmarker loaded successfully")
 except Exception as e:
-    print(f"❌ MediaPipe Error: {e}")
+    logger.exception("MediaPipe load error: %s", e)
     detector = None
 
 
@@ -120,7 +124,7 @@ def predict_image(image_bytes: bytes):
         # If this image looks weird (fingers cut off), increase 'padding' in get_cropped_image
         if DEBUG_MODE:
             cv2.imwrite("debug_crop.jpg", final_img)
-            print("📸 Saved debug image to backend folder!")
+            logger.debug("Debug crop saved to debug_crop.jpg")
 
     else:
         return {"label": "No Hand Detected", "confidence": 0.0}

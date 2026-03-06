@@ -20,6 +20,7 @@ from .config import (
     AppSettings,
     ClientSideCacheSettings,
     CORSSettings,
+    CryptSettings,
     DatabaseSettings,
     EnvironmentOption,
     EnvironmentSettings,
@@ -99,6 +100,15 @@ def lifespan_factory(
         app.state.initialization_complete = initialization_complete
 
         await set_threadpool_tokens()
+
+        # ── Startup Validation ──────────────────────────────────────────────────
+        if isinstance(settings, EnvironmentSettings) and isinstance(settings, CryptSettings):
+            if settings.ENVIRONMENT == EnvironmentOption.PRODUCTION:
+                if settings.SECRET_KEY.get_secret_value() == "secret-key":
+                    raise ValueError(
+                        "SECRET_KEY must be changed from the default value before running in production."
+                    )
+        # ────────────────────────────────────────────────────────────────────────
 
         try:
             if isinstance(settings, RedisCacheSettings) and settings.REDIS_CACHE_ENABLED:
@@ -211,7 +221,23 @@ def create_application(
     if isinstance(settings, ClientSideCacheSettings):
         application.add_middleware(ClientCacheMiddleware, max_age=settings.CLIENT_CACHE_MAX_AGE)
 
-    if isinstance(settings, CORSSettings):
+    if isinstance(settings, CORSSettings) and isinstance(settings, EnvironmentSettings):
+        # In non-local environments, warn if origins is still the default wildcard
+        if settings.ENVIRONMENT != EnvironmentOption.LOCAL and settings.CORS_ORIGINS == ["*"]:
+            import warnings
+            warnings.warn(
+                "CORS_ORIGINS is set to ['*'] in a non-local environment. "
+                "Set CORS_ORIGINS to your specific frontend domain(s) for security.",
+                stacklevel=2,
+            )
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=settings.CORS_METHODS,
+            allow_headers=settings.CORS_HEADERS,
+        )
+    elif isinstance(settings, CORSSettings):
         application.add_middleware(
             CORSMiddleware,
             allow_origins=settings.CORS_ORIGINS,

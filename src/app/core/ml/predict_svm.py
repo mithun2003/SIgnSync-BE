@@ -1,3 +1,5 @@
+import logging
+
 from pathlib import Path
 
 import cv2
@@ -6,6 +8,8 @@ import mediapipe as mp
 import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+
+logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
 BASE_DIR = Path(__file__).resolve().parent
@@ -17,9 +21,9 @@ TASK_PATH = BASE_DIR / "trained_model" / "hand_landmarker.task"
 try:
     svm_model = joblib.load(MODEL_PATH)
     label_encoder = joblib.load(ENCODER_PATH)
-    print("✅ SVM Model & Encoder Loaded")
+    logger.info("SVM model and encoder loaded successfully")
 except Exception as e:
-    print(f"❌ SVM Load Error: {e}")
+    logger.exception("SVM model load error: %s", e)
     svm_model = None
     label_encoder = None
 
@@ -28,9 +32,9 @@ try:
     base_options = python.BaseOptions(model_asset_path=str(TASK_PATH))
     options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1, min_hand_detection_confidence=0.5)
     detector = vision.HandLandmarker.create_from_options(options)
-    print("✅ MediaPipe Landmarker Loaded")
+    logger.info("MediaPipe hand landmarker loaded successfully")
 except Exception as e:
-    print(f"❌ MediaPipe Error: {e}")
+    logger.exception("MediaPipe load error: %s", e)
     detector = None
 
 

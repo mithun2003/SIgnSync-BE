@@ -52,8 +52,13 @@ class RateLimiter:
                 return True
 
         except Exception as e:
-            logger.exception(f"Error checking rate limit for user {user_id} on path {path}: {e}")
-            raise e
+            logger.warning(
+                "Redis rate limiter error for user %s on path '%s' — failing open: %s",
+                user_id,
+                path,
+                e,
+            )
+            return False  # Fail open: allow the request rather than blocking all traffic
 
         return False
 

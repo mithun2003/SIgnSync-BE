@@ -1,11 +1,19 @@
-"""Prediction API Router Handles HTTP POST and WebSocket endpoints for sign language prediction."""
+"""Prediction API Router — HTTP POST and WebSocket endpoints for sign language prediction."""
 
+import logging
 import time
+from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...core.db.database import async_get_db
 from ...core.ml.predict import get_health_status, get_public_info, predict_sign
 from ...core.ml.schema import HealthResponse, PredictionData, PredictResponse, ServiceInfoResponse
+from ...core.security import TokenType, verify_token
+from ...crud.crud_users import crud_users
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["Prediction"])
 
@@ -25,29 +33,21 @@ async def predict_sign_image(file: UploadFile = File(...)):
     - label: Predicted gesture (A-Z, del, space, nothing) or status (error, no_hand, uncertain)
     - confidence: Confidence percentage (0-100)
     """
-    # 1. Validate file type
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image file (jpg, png, etc.)")
 
-    # 2. Read image bytes
     start_time = time.time()
     image_bytes = await file.read()
 
-    # 3. Validate file size (max 5MB)
     if len(image_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
 
-    # 4. Run prediction
     result = predict_sign(image_bytes)
-
-    # 5. Calculate duration
     duration = time.time() - start_time
 
-    # 6. Determine success based on label
     label = result.get("label", "error")
     is_success = label not in ["error", "no_hand", "uncertain"]
 
-    # 7. Build appropriate message
     if label == "error":
         message = "Prediction failed. Please try again."
     elif label == "no_hand":
@@ -89,45 +89,72 @@ async def health_check():
 
 
 @router.websocket("/ws")
-async def websocket_prediction(websocket: WebSocket):
+async def websocket_prediction(
+    websocket: WebSocket,
+    token: Annotated[str | None, Query(description="Bearer access token for authentication")] = None,
+    db: AsyncSession = Depends(async_get_db),
+):
     """WebSocket endpoint for real-time sign language prediction.
 
+    **Authentication:** Pass your JWT access token as a query parameter:
+    `ws://your-server/api/v1/predict/ws?token=<your_access_token>`
+
     **Protocol:**
-    1. Client connects to ws://your-server/api/v1/predict/ws
-    2. Client sends skeleton image as binary bytes
-    3. Server responds with JSON: { success, data: { label, confidence }, time }
+    1. Connect with a valid token
+    2. Send skeleton image as binary bytes
+    3. Receive JSON: `{ success, data: { label, confidence }, time, frame }`
     4. Repeat for real-time prediction
     """
+    # Authenticate before accepting the connection
+    if not token:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+
+    token_data = await verify_token(token, TokenType.ACCESS, db)
+    if token_data is None:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
+    if "@" in token_data.username_or_email:
+        user = await crud_users.get(db=db, email=token_data.username_or_email, is_deleted=False)
+    else:
+        user = await crud_users.get(db=db, username=token_data.username_or_email, is_deleted=False)
+
+    if not user:
+        await websocket.close(code=4001, reason="User not found")
+        return
+
     await websocket.accept()
-    print("✅ Client connected to WebSocket")
+    user_id = user.get("id")
+    logger.info("WebSocket connected: user_id=%s", user_id)
 
     frame_count = 0
 
     try:
         while True:
-            # 1. Receive image bytes from frontend
             data = await websocket.receive_bytes()
 
-            # 2. Run prediction
+            if len(data) > 5 * 1024 * 1024:
+                await websocket.send_json({"success": False, "error": "Frame too large (max 5MB)"})
+                continue
+
             start_time = time.time()
             result = predict_sign(data)
             duration = time.time() - start_time
 
             frame_count += 1
 
-            # 3. Determine success
             label = result.get("label", "error")
             is_success = label not in ["error", "no_hand", "uncertain"]
 
-            # 4. Send response
             await websocket.send_json(
                 {"success": is_success, "data": result, "time": f"{duration:.4f}s", "frame": frame_count}
             )
 
     except WebSocketDisconnect:
-        print(f"🔌 Client disconnected after {frame_count} frames")
+        logger.info("WebSocket disconnected: user_id=%s after %d frames", user_id, frame_count)
     except Exception as e:
-        print(f"❌ WebSocket Error: {e}")
+        logger.exception("WebSocket error for user_id=%s: %s", user_id, e)
         try:
             await websocket.send_json(
                 {"success": False, "data": {"label": "error", "confidence": 0.0}, "time": "0s", "error": str(e)}

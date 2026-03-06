@@ -1,7 +1,9 @@
 """Sign Language Gesture Prediction Module Handles model loading and prediction for skeleton images."""
 
 import json
+import logging
 import os
+import threading
 from pathlib import Path
 
 import cv2
@@ -30,47 +32,51 @@ CONFIDENCE_THRESHOLD = 30.0  # Minimum confidence percentage (0-100)
 # GLOBAL MODEL LOADING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-print(f"⏳ Looking for models in: {MODELS_DIR}")
+logger = logging.getLogger(__name__)
+logger.debug("Looking for models in: %s", MODELS_DIR)
 
 model: object | None = None
 class_names: list[str] = []
 model_loaded: bool = False
+_model_load_lock = threading.Lock()
 
 
-def load_ml_model():
+def load_ml_model() -> bool:
     global model, class_names, model_loaded
 
     if model_loaded and model is not None:
-        return True  # Already loaded
-
-    if not MODEL_PATH.exists():
-        print(f"❌ CRITICAL: Model not found at {MODEL_PATH}")
-        return False
-
-    if not CLASS_PATH.exists():
-        print(f"❌ CRITICAL: Class names not found at {CLASS_PATH}")
-        return False
-
-    try:
-        print("⚡ Loading ML model (lazy)...")
-
-        # IMPORTANT: compile=False speeds up loading
-        model = load_model(str(MODEL_PATH), compile=False)
-
-        with open(CLASS_PATH) as f:
-            class_names = json.load(f)
-
-        model_loaded = True
-        print("✅ ML Model ready")
         return True
 
-    except Exception as e:
-        print(f"❌ Error loading model: {e}")
-        model_loaded = False
-        return False
+    with _model_load_lock:
+        # Double-checked locking: re-verify after acquiring the lock
+        if model_loaded and model is not None:
+            return True
 
-# Load on module import
-# load_ml_model()
+        if not MODEL_PATH.exists():
+            logger.critical("Model not found at %s", MODEL_PATH)
+            return False
+
+        if not CLASS_PATH.exists():
+            logger.critical("Class names not found at %s", CLASS_PATH)
+            return False
+
+        try:
+            logger.info("Loading ML model...")
+
+            # compile=False speeds up loading
+            model = load_model(str(MODEL_PATH), compile=False)
+
+            with open(CLASS_PATH) as f:
+                class_names = json.load(f)
+
+            model_loaded = True
+            logger.info("ML model loaded successfully (%d classes)", len(class_names))
+            return True
+
+        except Exception as e:
+            logger.exception("Error loading ML model: %s", e)
+            model_loaded = False
+            return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PREPROCESSING FUNCTIONS
@@ -178,7 +184,7 @@ def predict_sign(image_bytes: bytes) -> dict:
         return {"label": label, "confidence": round(confidence, 2)}
 
     except Exception as e:
-        print(f"❌ Prediction error: {e}")
+        logger.exception("Prediction error: %s", e)
         return {"label": "error", "confidence": 0.0}
 
 

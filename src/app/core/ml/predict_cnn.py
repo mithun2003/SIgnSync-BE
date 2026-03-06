@@ -1,3 +1,5 @@
+import logging
+
 from pathlib import Path
 
 import cv2
@@ -6,6 +8,8 @@ import tensorflow as tf
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 from .schema import PredictData
+
+logger = logging.getLogger(__name__)
 
 # MODEL_PATH = "./trained_model/sign_language_mobilenet.h5"
 # CLASS_PATH = "./trained_model/class_names.txt"
@@ -35,12 +39,12 @@ def predict_image(image_bytes: bytes) -> PredictData:
     preds = model.predict(img)
     idx = np.argmax(preds)
     confidence = float(preds[0][idx])
-    print(
+    logger.debug(
+        "Prediction: idx=%d label=%s confidence=%.4f (%.2f%%)",
         idx,
         CLASS_NAMES[idx],
-        preds[0][idx],
         confidence,
-        f"{confidence * 100:.2f}",
+        confidence * 100,
     )
 
     return PredictData(label=CLASS_NAMES[idx], confidence=round(confidence * 100, 2))

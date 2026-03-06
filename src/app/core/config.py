@@ -151,6 +151,12 @@ class CORSSettings(BaseSettings):
     CORS_METHODS: list[str] = ["*"]
     CORS_HEADERS: list[str] = ["*"]
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def effective_cors_origins(self) -> list[str]:
+        """Return CORS_ORIGINS as-is; callers may restrict further based on environment."""
+        return self.CORS_ORIGINS
+
 
 class Settings(
     AppSettings,
