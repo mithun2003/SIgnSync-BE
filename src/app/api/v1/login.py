@@ -36,7 +36,7 @@ async def login_for_access_token(
     # Track last login time
     await crud_users.update(
         db=db,
-        object=UserUpdateInternal(last_login_at=datetime.now(UTC)),
+        object=UserUpdateInternal(updated_at=datetime.now(UTC), last_login_at=datetime.now(UTC)),
         id=user["id"],
     )
 
