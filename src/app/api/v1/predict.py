@@ -1,7 +1,9 @@
 """Prediction API Router — HTTP POST and WebSocket endpoints for sign language prediction."""
 
+import asyncio
 import logging
 import time
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
@@ -11,7 +13,9 @@ from ...core.db.database import async_get_db
 from ...core.ml.predict import get_health_status, get_public_info, predict_sign
 from ...core.ml.schema import HealthResponse, PredictionData, PredictResponse, ServiceInfoResponse
 from ...core.security import TokenType, verify_token
+from ...crud.crud_sign_detections import crud_sign_detections
 from ...crud.crud_users import crud_users
+from ...schemas.sign_detection import SignDetectionCreateInternal
 from ..dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -27,6 +31,7 @@ router = APIRouter(prefix="/predict", tags=["Prediction"])
 @router.post("/", response_model=PredictResponse)
 async def predict_sign_image(
     current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
     file: UploadFile = File(...),
 ):
     """Predict sign language gesture from skeleton image.
@@ -46,20 +51,33 @@ async def predict_sign_image(
     if len(image_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
 
-    result = predict_sign(image_bytes)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, predict_sign, image_bytes)
     duration = time.time() - start_time
 
     label = result.get("label", "error")
+    confidence = float(result.get("confidence", 0.0)) / 100.0  # normalize 0-100 → 0.0-1.0
     is_success = label not in ["error", "no_hand", "uncertain"]
 
-    if label == "error":
-        message = "Prediction failed. Please try again."
-    elif label == "no_hand":
-        message = "No hand detected in the image."
-    elif label == "uncertain":
-        message = f"Low confidence prediction ({result.get('confidence', 0)}%)."
-    else:
-        message = f"Detected gesture: {label} ({result.get('confidence', 0)}%)"
+    # Log successful detections to the database
+    if is_success:
+        try:
+            detection_internal = SignDetectionCreateInternal(
+                user_id=current_user["id"],
+                detected_sign=label,
+                confidence=confidence,
+                duration_seconds=round(duration, 4),
+            )
+            await crud_sign_detections.create(db=db, object=detection_internal)
+        except Exception:
+            logger.exception("Failed to log detection for user_id=%s label=%s", current_user["id"], label)
+
+    message_map = {
+        "error": "Prediction failed. Please try again.",
+        "no_hand": "No hand detected in the image.",
+        "uncertain": f"Low confidence prediction ({result.get('confidence', 0)}%).",
+    }
+    message = message_map.get(label, f"Detected gesture: {label} ({result.get('confidence', 0)}%)")
 
     return PredictResponse(
         success=is_success,
@@ -131,7 +149,12 @@ async def websocket_prediction(
     user_id = user.get("id")
     logger.info("WebSocket connected: user_id=%s", user_id)
 
+    session_id = str(uuid.uuid4())
     frame_count = 0
+
+    # Deduplication state: only log when sign changes or after 1-second gap
+    last_logged_label: str | None = None
+    last_logged_time: float = 0.0
 
     try:
         while True:
@@ -142,13 +165,34 @@ async def websocket_prediction(
                 continue
 
             start_time = time.time()
-            result = predict_sign(data)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, predict_sign, data)
             duration = time.time() - start_time
 
             frame_count += 1
 
             label = result.get("label", "error")
+            confidence = float(result.get("confidence", 0.0)) / 100.0  # normalize to 0-1
             is_success = label not in ["error", "no_hand", "uncertain"]
+
+            # Log to sign_detection: only on successful detections, and only when
+            # the sign changed or at least 1 second has passed since the last log.
+            if is_success:
+                now = time.time()
+                if label != last_logged_label or (now - last_logged_time) >= 1.0:
+                    try:
+                        detection_internal = SignDetectionCreateInternal(
+                            user_id=user_id,
+                            detected_sign=label,
+                            confidence=confidence,
+                            session_id=session_id,
+                            duration_seconds=round(duration, 4),
+                        )
+                        await crud_sign_detections.create(db=db, object=detection_internal)
+                        last_logged_label = label
+                        last_logged_time = now
+                    except Exception:
+                        logger.exception("Failed to log detection for user_id=%s label=%s", user_id, label)
 
             await websocket.send_json(
                 {"success": is_success, "data": result, "time": f"{duration:.4f}s", "frame": frame_count}

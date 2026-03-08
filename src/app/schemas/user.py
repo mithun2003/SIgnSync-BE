@@ -69,6 +69,7 @@ class UserUpdate(BaseModel):
 
 class UserUpdateInternal(UserUpdate):
     updated_at: datetime
+    last_login_at: datetime | None = None
 
 
 class UserTierUpdate(BaseModel):
@@ -84,6 +85,19 @@ class UserDelete(BaseModel):
 
 class UserRestoreDeleted(BaseModel):
     is_deleted: bool
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str
+    new_password: Annotated[
+        str,
+        Field(
+            pattern=r"^.{8,}|[0-9]+|[A-Z]+|[a-z]+|[^a-zA-Z0-9]+$",
+            examples=["NewStr1ng!"],
+        ),
+    ]
 
 
 class UserResponse(CommonResponse):

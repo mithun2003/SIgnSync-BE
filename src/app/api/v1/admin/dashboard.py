@@ -1,13 +1,13 @@
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from fastcrud import JoinConfig
+from sqlalchemy import Integer, cast, select, text
 from sqlalchemy import func as sa_func
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....api.dependencies import get_current_superuser
@@ -32,7 +32,7 @@ def _calc_growth(current: int, previous: int) -> float:
 
 async def _check_db(db: AsyncSession) -> str:
     try:
-        await db.execute(text("SELECT 1"))  # ✅ FIX: was 'from arq import func'
+        await db.execute(text("SELECT 1"))
         return "online"
     except Exception:
         return "offline"
@@ -75,7 +75,8 @@ def _format_confidence(conf: float) -> str:
 async def get_admin_dashboard(
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ):
-    now = datetime.utcnow()
+    # ✅ FIX: Use timezone-aware datetime
+    now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month_ago = now - timedelta(days=30)
     prev_month_start = now - timedelta(days=60)
@@ -103,14 +104,14 @@ async def get_admin_dashboard(
     detection_growth = _calc_growth(detections_this_month, detections_last_month)
 
     # ─── TOP USERS (Raw SQLAlchemy — needs GROUP BY + ORDER BY alias) ───
-    # ✅ FIX: CountConfig can't sort by alias, so we use raw SQL here
     top_users_stmt = (
         select(
             User.username,
             sa_func.count(SignDetection.id).label("detections_count"),
+            sa_func.avg(cast(SignDetection.is_correct, Integer)).label("avg_accuracy"),
         )
         .outerjoin(SignDetection, SignDetection.user_id == User.id)
-        .where(not User.is_deleted)
+        .where(~User.is_deleted)
         .group_by(User.id, User.username)
         .order_by(sa_func.count(SignDetection.id).desc())
         .limit(5)
@@ -118,7 +119,14 @@ async def get_admin_dashboard(
     result = await db.execute(top_users_stmt)
     rows = result.all()
 
-    top_users = [{"username": row.username, "detections": row.detections_count} for row in rows]
+    top_users = [
+        {
+            "username": row.username,
+            "detections": row.detections_count,
+            "accuracy": round(row.avg_accuracy, 4) if row.avg_accuracy is not None else 0.0,
+        }
+        for row in rows
+    ]
 
     # ─── RECENT ACTIVITIES (FastCRUD — sort by real column created_at) ───
     join_config = JoinConfig(
@@ -130,7 +138,7 @@ async def get_admin_dashboard(
     recent_result = await detection_crud.get_multi_joined(
         db=db,
         joins_config=[join_config],
-        sort_columns="created_at",  # ✅ Real column on SignDetection
+        sort_columns="created_at",
         sort_orders="desc",
         limit=10,
     )
@@ -138,7 +146,15 @@ async def get_admin_dashboard(
     recent_activities = []
     for i, det in enumerate(recent_result.get("data", [])):
         created = det.get("created_at")
-        elapsed = (now - created) if created else timedelta(hours=99)
+
+        # ✅ FIX: Handle both naive and aware datetimes
+        if created:
+            # Make created timezone-aware if it's naive
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            elapsed = now - created
+        else:
+            elapsed = timedelta(hours=99)
 
         username = det.get("user_username", det.get("username", "User"))
         sign = det.get("detected_sign", "?")
@@ -187,7 +203,6 @@ async def get_admin_dashboard(
 async def export_admin_report(
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ):
-    # ✅ FIX: Use raw SQL for export too (same CountConfig sort issue)
     export_stmt = (
         select(
             User.id,
@@ -199,9 +214,9 @@ async def export_admin_report(
             sa_func.count(SignDetection.id).label("total_detections"),
         )
         .outerjoin(SignDetection, SignDetection.user_id == User.id)
-        .where(not User.is_deleted)
+        .where(~User.is_deleted)  # ✅ FIX: Use ~ instead of not
         .group_by(User.id)
-        .order_by(User.created_at.desc())  # ✅ Sort by real column
+        .order_by(User.created_at.desc())
     )
 
     result = await db.execute(export_stmt)

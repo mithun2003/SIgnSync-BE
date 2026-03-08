@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -17,6 +17,8 @@ from ...core.security import (
     create_refresh_token,
     verify_token,
 )
+from ...crud.crud_users import crud_users
+from ...schemas.user import UserUpdateInternal
 
 router = APIRouter(tags=["login"], prefix="/auth")
 
@@ -30,6 +32,13 @@ async def login_for_access_token(
     user = await authenticate_user(username_or_email=form_data.username, password=form_data.password, db=db)
     if not user:
         raise UnauthorizedException("Wrong username, email or password.")
+
+    # Track last login time
+    await crud_users.update(
+        db=db,
+        object=UserUpdateInternal(last_login_at=datetime.now(UTC)),
+        id=user["id"],
+    )
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = await create_access_token(data={"sub": user["username"]}, expires_delta=access_token_expires)

@@ -1,6 +1,3 @@
-# backend/src/app/models/asl_sign.py
-# Minimal ASL Sign model - backend only stores URL and version
-
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, func
@@ -10,14 +7,11 @@ from ..core.db.database import Base
 
 
 class Signs(Base):
-    """
-    Minimal ASL Sign model
+    """One record per ASL character (A-Z, SPACE).
 
-    Backend only stores:
-    - Which Cloudinary URL is currently active
-    - Version number
-
-    All image management happens in frontend!
+    Stores the currently-active Cloudinary image URL and its metadata. All historical versions live in Cloudinary under
+    asl-signs/{CHARACTER}/. The admin can list those versions via the Cloudinary API and switch the active image at any
+    time.
     """
 
     __tablename__ = "signs"
@@ -30,25 +24,29 @@ class Signs(Base):
         init=False,
     )
 
-    # Character (A-Z, SPACE) - ONE record per character
+    # Character (A-Z, SPACE) – ONE record per character
     character: Mapped[str] = mapped_column(String(10), nullable=False, unique=True, index=True)
 
-    # Current Cloudinary URL (selected by user)
+    # Active Cloudinary image
     cloudinary_url: Mapped[str] = mapped_column(String(1000), nullable=False)
-
-    # Last updated by user ID
+    # Who last updated
     updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Version number (increments each time URL changes)
+    cloudinary_public_id: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+
+    # Image metadata for the active image
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # bytes
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # pixels
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)  # pixels
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+
+    # Increments every time the active image changes
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
-    # Optional notes
     notes: Mapped[str | None] = mapped_column(String(500), default=None)
 
-    # Timestamps
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=False, default=func.now())
-
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, onupdate=func.now())
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Signs(character='{self.character}', version={self.version})>"

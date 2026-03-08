@@ -1,7 +1,8 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
-from fastcrud import PaginatedListResponse, compute_offset, paginated_response
+from fastapi import APIRouter, Depends
+from sqlalchemy import func as sa_func
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....api.dependencies import get_current_superuser, get_current_user
@@ -15,6 +16,7 @@ from ....core.security import blacklist_token, get_password_hash, oauth2_scheme
 from ....crud.crud_rate_limit import crud_rate_limits
 from ....crud.crud_tier import crud_tiers
 from ....crud.crud_users import crud_users
+from ....models.user import User
 from ....schemas.tier import TierRead
 from ....schemas.user import (
     UserCreate,
@@ -28,9 +30,8 @@ from ....schemas.user import (
 router = APIRouter(tags=["users"])
 
 
-@router.post("/auth/user", response_model=UserRead, status_code=201)
+@router.post("/auth/user", response_model=UserRead, status_code=201, dependencies=[Depends(get_current_superuser)])
 async def write_user(
-    request: Request,
     user: UserCreate,
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ) -> dict[str, Any]:
@@ -55,33 +56,85 @@ async def write_user(
     return created_user
 
 
-@router.get("/users", response_model=PaginatedListResponse[UserRead])
+@router.get("/users", dependencies=[Depends(get_current_superuser)])
 async def read_users(
-    request: Request,
     db: Annotated[AsyncSession, Depends(async_get_db)],
+    search: str = "",
+    status: str = "all",
     page: int = 1,
-    items_per_page: int = 10,
-) -> dict:
-    users_data = await crud_users.get_multi(
-        db=db,
-        offset=compute_offset(page, items_per_page),
-        limit=items_per_page,
-        is_deleted=False,
-    )
+    limit: int = 10,
+) -> dict[str, Any]:
+    """List users with optional server-side search and status filtering."""
+    # ── Build filter conditions ────────────────────────────────────────────────
+    conditions: list = [User.is_deleted == False]  # noqa: E712
 
-    response: dict[str, Any] = paginated_response(crud_data=users_data, page=page, items_per_page=items_per_page)
-    return response
+    if status == "active":
+        conditions.append(User.is_active == True)  # noqa: E712
+    elif status in ("inactive", "suspended"):
+        conditions.append(User.is_active == False)  # noqa: E712
+
+    if search:
+        term = f"%{search.lower()}%"
+        conditions.append(
+            or_(
+                sa_func.lower(User.username).like(term),
+                sa_func.lower(User.email).like(term),
+            )
+        )
+
+    # ── Summary counts (always unfiltered, for stats cards) ───────────────────
+    total_all = (await db.execute(select(sa_func.count()).where(User.is_deleted == False))).scalar() or 0  # noqa: E712
+    total_active = (await db.execute(select(sa_func.count()).where(not User.is_deleted, User.is_active))).scalar() or 0
+    total_inactive = (
+        await db.execute(select(sa_func.count()).where(not User.is_deleted, not User.is_active))
+    ).scalar() or 0
+
+    # ── Filtered count ─────────────────────────────────────────────────────────
+    total_filtered = (await db.execute(select(sa_func.count()).where(*conditions))).scalar() or 0
+
+    # ── Paginated data ─────────────────────────────────────────────────────────
+    offset = (page - 1) * limit
+    result = await db.execute(
+        select(User).where(*conditions).order_by(User.created_at.desc()).offset(offset).limit(limit)
+    )
+    rows = result.scalars().all()
+
+    user_list = [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": "admin" if u.is_superuser else "user",
+            "status": "active" if u.is_active else "inactive",
+            "joined_at": u.created_at.isoformat() if u.created_at else None,
+            "last_seen": u.updated_at.isoformat() if u.updated_at else None,
+            "total_signs": 0,
+        }
+        for u in rows
+    ]
+
+    return {
+        "data": user_list,
+        "total_count": total_filtered,
+        "page": page,
+        "items_per_page": limit,
+        "has_more": (page * limit) < total_filtered,
+        "summary": {
+            "total": total_all,
+            "active": total_active,
+            "inactive": total_inactive,
+            "suspended": 0,
+        },
+    }
 
 
 @router.get("/user/me/", response_model=UserResponse)
-async def read_users_me(request: Request, current_user: Annotated[dict, Depends(get_current_user)]) -> dict:
+async def read_users_me(current_user: Annotated[dict, Depends(get_current_user)]) -> dict:
     return UserResponse(data=current_user)
 
 
 @router.get("/user/{username}", response_model=UserRead)
-async def read_user(
-    request: Request, username: str, db: Annotated[AsyncSession, Depends(async_get_db)]
-) -> dict[str, Any]:
+async def read_user(username: str, db: Annotated[AsyncSession, Depends(async_get_db)]) -> dict[str, Any]:
     db_user = await crud_users.get(db=db, username=username, is_deleted=False, schema_to_select=UserRead)
     if db_user is None:
         raise NotFoundException("User not found")
@@ -91,7 +144,6 @@ async def read_user(
 
 @router.patch("/user/{username}")
 async def patch_user(
-    request: Request,
     values: UserUpdate,
     username: str,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -121,7 +173,6 @@ async def patch_user(
 
 @router.delete("/user/{username}")
 async def erase_user(
-    request: Request,
     username: str,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
@@ -141,7 +192,6 @@ async def erase_user(
 
 @router.delete("/db_user/{username}", dependencies=[Depends(get_current_superuser)])
 async def erase_db_user(
-    request: Request,
     username: str,
     db: Annotated[AsyncSession, Depends(async_get_db)],
     token: str = Depends(oauth2_scheme),
@@ -156,9 +206,7 @@ async def erase_db_user(
 
 
 @router.get("/user/{username}/rate_limits", dependencies=[Depends(get_current_superuser)])
-async def read_user_rate_limits(
-    request: Request, username: str, db: Annotated[AsyncSession, Depends(async_get_db)]
-) -> dict[str, Any]:
+async def read_user_rate_limits(username: str, db: Annotated[AsyncSession, Depends(async_get_db)]) -> dict[str, Any]:
     db_user = await crud_users.get(db=db, username=username, schema_to_select=UserRead)
     if db_user is None:
         raise NotFoundException("User not found")
@@ -180,9 +228,7 @@ async def read_user_rate_limits(
 
 
 @router.get("/user/{username}/tier")
-async def read_user_tier(
-    request: Request, username: str, db: Annotated[AsyncSession, Depends(async_get_db)]
-) -> dict | None:
+async def read_user_tier(username: str, db: Annotated[AsyncSession, Depends(async_get_db)]) -> dict | None:
     db_user = await crud_users.get(db=db, username=username, schema_to_select=UserRead)
     if db_user is None:
         raise NotFoundException("User not found")
@@ -205,7 +251,6 @@ async def read_user_tier(
 
 @router.patch("/user/{username}/tier", dependencies=[Depends(get_current_superuser)])
 async def patch_user_tier(
-    request: Request,
     username: str,
     values: UserTierUpdate,
     db: Annotated[AsyncSession, Depends(async_get_db)],

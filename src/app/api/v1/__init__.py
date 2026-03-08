@@ -7,6 +7,7 @@ from .login import router as login_router
 from .logout import router as logout_router
 from .predict import router as predict_router
 from .rate_limits import router as rate_limits_router
+from .sign_detections import router as sign_detections_router
 from .signs import router as signs_router
 from .tasks import router as tasks_router
 from .tiers import router as tiers_router
@@ -23,7 +24,6 @@ router.include_router(tasks_router)
 router.include_router(tiers_router)
 router.include_router(rate_limits_router)
 router.include_router(dashboard_router)
+router.include_router(sign_detections_router)
 
 router.include_router(auth_router)
-
-

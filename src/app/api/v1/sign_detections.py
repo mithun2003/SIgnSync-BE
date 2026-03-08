@@ -1,5 +1,4 @@
-"""
-Sign Detection endpoints — follows the same pattern as your posts.py router.
+"""Sign Detection endpoints — follows the same pattern as your posts.py router.
 
 Uses crud_sign_detections for ALL database operations.
 Router only handles: validation → CRUD call → response formatting.
@@ -7,7 +6,7 @@ Router only handles: validation → CRUD call → response formatting.
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastcrud import PaginatedListResponse, compute_offset, paginated_response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +30,6 @@ router = APIRouter(prefix="/detection", tags=["sign-detection"])
 # ─────────────────────────────────────────────────────────────
 @router.post("/log", response_model=SignDetectionRead, status_code=201)
 async def log_detection(
-    request: Request,
     detection: SignDetectionCreate,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
@@ -58,7 +56,6 @@ async def log_detection(
 # ─────────────────────────────────────────────────────────────
 @router.post("/log/batch", status_code=201)
 async def log_batch_detections(
-    request: Request,
     batch: SignDetectionBatchCreate,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
@@ -81,7 +78,6 @@ async def log_batch_detections(
 # ─────────────────────────────────────────────────────────────
 @router.get("/list", response_model=PaginatedListResponse[SignDetectionRead])
 async def read_detections(
-    request: Request,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
     page: int = 1,
@@ -108,7 +104,6 @@ async def read_detections(
 # ─────────────────────────────────────────────────────────────
 @router.get("/{id}", response_model=SignDetectionRead)
 async def read_detection(
-    request: Request,
     id: int,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],
@@ -132,7 +127,6 @@ async def read_detection(
 # ─────────────────────────────────────────────────────────────
 @router.patch("/{id}")
 async def update_detection(
-    request: Request,
     id: int,
     values: SignDetectionUpdate,
     current_user: Annotated[dict, Depends(get_current_user)],
@@ -157,7 +151,6 @@ async def update_detection(
 # ─────────────────────────────────────────────────────────────
 @router.delete("/{id}")
 async def delete_detection(
-    request: Request,
     id: int,
     current_user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(async_get_db)],

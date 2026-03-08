@@ -3,29 +3,23 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 
 class ClientCacheMiddleware(BaseHTTPMiddleware):
-    """Middleware to set the `Cache-Control` header for client-side caching on all responses.
+    """Middleware to set the `Cache-Control` header for client-side caching.
+
+    GET responses are cached for `max_age` seconds.
+    Admin routes and all non-GET methods always receive `no-store` so that
+    clients always re-fetch data after a mutation or when viewing live admin data.
 
     Parameters
     ----------
     app: FastAPI
         The FastAPI application instance.
     max_age: int, optional
-        Duration (in seconds) for which the response should be cached. Defaults to 60 seconds.
+        Duration (in seconds) for which GET responses should be cached. Defaults to 60 seconds.
 
     Attributes
     ----------
     max_age: int
-        Duration (in seconds) for which the response should be cached.
-
-    Methods
-    -------
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        Process the request and set the `Cache-Control` header in the response.
-
-    Note
-    ----
-        - The `Cache-Control` header instructs clients (e.g., browsers)
-        to cache the response for the specified duration.
+        Duration (in seconds) for which GET responses should be cached.
     """
 
     def __init__(self, app: FastAPI, max_age: int = 60) -> None:
@@ -52,5 +46,8 @@ class ClientCacheMiddleware(BaseHTTPMiddleware):
             - This method is automatically called by Starlette for processing the request-response cycle.
         """
         response: Response = await call_next(request)
-        response.headers["Cache-Control"] = f"public, max-age={self.max_age}"
+        if request.method == "GET" and "/admin/" not in request.url.path:
+            response.headers["Cache-Control"] = f"public, max-age={self.max_age}"
+        else:
+            response.headers["Cache-Control"] = "no-store"
         return response

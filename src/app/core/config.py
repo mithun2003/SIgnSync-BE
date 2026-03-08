@@ -98,7 +98,6 @@ class RedisQueueSettings(BaseSettings):
     REDIS_QUEUE_PORT: int = 6379
 
 
-
 class RedisRateLimiterSettings(BaseSettings):
     REDIS_RATE_LIMIT_ENABLED: bool = True
     REDIS_RATE_LIMIT_HOST: str = "localhost"
@@ -132,7 +131,7 @@ class CRUDAdminSettings(BaseSettings):
     CRUD_ADMIN_REDIS_HOST: str = "localhost"
     CRUD_ADMIN_REDIS_PORT: int = 6379
     CRUD_ADMIN_REDIS_DB: int = 0
-    CRUD_ADMIN_REDIS_PASSWORD: str | None = "None"
+    CRUD_ADMIN_REDIS_PASSWORD: str | None = None
     CRUD_ADMIN_REDIS_SSL: bool = False
 
 

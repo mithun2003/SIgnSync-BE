@@ -1,0 +1,1163 @@
+{
+  "info": {
+    "name": "SignSync API",
+    "description": "Complete API collection for the SignSync backend — an ASL (American Sign Language) detection and learning platform.\n\n## Setup\n1. Set the `baseUrl` variable to your server (default: `http://localhost:8000`).\n2. Call **Auth / Login** to get tokens. The collection auto-saves `accessToken` and `refreshToken` via a test script.\n3. All protected requests use `{{accessToken}}` in the `Authorization` header automatically.\n\n## Variables\n| Variable | Default | Description |\n|---|---|---|\n| `baseUrl` | `http://localhost:8000` | Server base URL |\n| `accessToken` | _(set by Login)_ | JWT access token |\n| `refreshToken` | _(set by Login)_ | JWT refresh token |\n| `testUsername` | `john_doe` | Username for quick tests |\n| `testPassword` | `SecurePass123!` | Password for quick tests |",
+    "_postman_id": "signsync-api-collection-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the SignSync backend server"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT access token — auto-populated by the Login request"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT refresh token — auto-populated by the Login request"
+    },
+    {
+      "key": "testUsername",
+      "value": "john_doe",
+      "type": "string",
+      "description": "Default username used in test requests"
+    },
+    {
+      "key": "testPassword",
+      "value": "SecurePass123!",
+      "type": "string",
+      "description": "Default password used in test requests"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "description": "User registration, login, token refresh, and logout. Login auto-saves the access and refresh tokens to collection variables.",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"john_doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}",
+              "options": {
+                "raw": { "language": "json" }
+              }
+            },
+            "description": "Register a new user account.\n\n**Auth required:** No\n\n**Request fields:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `username` | string | ✅ | Unique username |\n| `email` | string | ✅ | Valid email address |\n| `password` | string | ✅ | Min 8 characters |\n| `first_name` | string | ❌ | Optional first name |\n| `last_name` | string | ❌ | Optional last name |\n\n**Response:** `201 Created` — full user profile object\n\n**Errors:**\n- `400` — email/username already in use\n- `422` — validation error"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', json.data.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', json.data.refresh_token);",
+                  "    console.log('✅ Tokens saved to collection variables');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{testUsername}}",
+                  "description": "Username or email address",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{testPassword}}",
+                  "description": "User password",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Authenticate with username/email and password.\n\n**Auth required:** No\n\n**Content-Type:** `application/x-www-form-urlencoded` (OAuth2 form data)\n\n**Body fields:**\n| Field | Description |\n|---|---|\n| `username` | Username **or** email address |\n| `password` | User's password |\n\n**Response:** `200 OK` — returns `access_token`, `refresh_token`, `token_type`, `user_role`\n\n**Side-effects:** The test script in this request automatically saves `accessToken` and `refreshToken` to collection variables, so all other requests are ready to use right away.\n\n**Response headers include:**\n```\nSet-Cookie: refresh_token=<token>; HttpOnly; Secure; SameSite=Lax\n```\n\n**Errors:**\n- `401` — wrong credentials\n- `422` — missing form fields"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', json.access_token);",
+                  "    console.log('✅ New access token saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "refresh_token={{refreshToken}}",
+                "description": "The refresh token cookie set during login. In browsers this is sent automatically; set manually here for Postman."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "body": { "mode": "none" },
+            "description": "Exchange the refresh token for a new short-lived access token.\n\n**Auth required:** Cookie `refresh_token` (set by Login)\n\n**No request body needed.** The refresh token is read from the `refresh_token` HttpOnly cookie.\n\nIn Postman, the Cookie header is set manually to `{{refreshToken}}`.\n\n**Response:** `200 OK` — `{ access_token, token_type }`\n\n**Errors:**\n- `401` — refresh token missing, expired, or already blacklisted"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "refresh_token={{refreshToken}}",
+                "description": "Refresh token cookie — required to blacklist both tokens"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "body": { "mode": "none" },
+            "description": "Invalidate the current session. Blacklists both the access token and the refresh token. After this call, further requests with either token will be rejected.\n\n**Auth required:** Yes (Bearer token + Cookie `refresh_token`)\n\n**Response:** `200 OK` — `{ message: 'Logged out successfully' }`\n\n**Errors:**\n- `401` — refresh token not found or invalid"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "❤️ Health",
+      "description": "Liveness and readiness probes. No authentication needed.",
+      "item": [
+        {
+          "name": "Health Check (Liveness)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Simple liveness probe. Confirms the process is running. Returns app name, version, and environment.\n\n**Auth required:** No\n\n**Response:** `200 OK`\n```json\n{ \"app\": \"SignSync\", \"environment\": \"local\", \"version\": \"0.1.0\" }\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ready"]
+            },
+            "description": "Readiness probe. Tests connectivity to PostgreSQL and Redis before confirming the app can serve traffic. Use in Kubernetes readiness probes or deployment health gates.\n\n**Auth required:** No\n\n**Response `200 OK`** (all healthy):\n```json\n{ \"status\": \"ready\", \"services\": { \"database\": \"healthy\", \"redis\": \"healthy\" } }\n```\n\n**Response `503`** (a dependency is down):\n```json\n{ \"status\": \"not ready\", \"services\": { \"database\": \"healthy\", \"redis\": \"unhealthy\" } }\n```"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👤 User Profile",
+      "description": "Manage the authenticated user's own profile, preferences, and profile image.",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user", "me"]
+            },
+            "description": "Retrieve the currently authenticated user's full profile — personal details, preferences (language, country), and profile image URL.\n\n**Auth required:** Yes (Bearer token)\n\n**Response:** `200 OK` — full user profile object"
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newemail@example.com\",\n  \"username\": \"new_username\",\n  \"first_name\": \"Johnny\",\n  \"last_name\": \"Doe\",\n  \"bio\": \"Sign language enthusiast\",\n  \"country\": \"US\",\n  \"language\": \"en\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Partial update on the current user's profile. Only the fields you include are changed.\n\n**Auth required:** Yes (Bearer token)\n\n**All body fields are optional:**\n| Field | Type | Description |\n|---|---|---|\n| `email` | string | New email address |\n| `username` | string | New unique username |\n| `first_name` | string | First name |\n| `last_name` | string | Last name |\n| `bio` | string | Short biography |\n| `country` | string | ISO 3166-1 alpha-2 country code |\n| `language` | string | Language code (e.g. `en`) |\n\n**Errors:**\n- `409` — email or username already taken\n- `422` — validation error"
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Profile Image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user/me/profile-image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user", "me", "profile-image"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Image file to upload. Supported: JPEG, PNG, GIF, WebP. Max 5 MB.",
+                  "src": []
+                }
+              ]
+            },
+            "description": "Upload a profile picture. Stored in `media/profile_images/` on the server.\n\n**Auth required:** Yes (Bearer token)\n\n**Content-Type:** `multipart/form-data`\n\n**Form field:**\n| Field | Type | Description |\n|---|---|---|\n| `file` | file | Image file (JPEG / PNG / GIF / WebP, max 5 MB) |\n\n**Response:** `200 OK` — updated user object with new `profile_image_url`\n\n**Errors:**\n- `400` — unsupported file type or missing filename\n- `413` — file exceeds 5 MB"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Profile Image",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user/me/profile-image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user", "me", "profile-image"]
+            },
+            "description": "Remove the current user's profile picture. Deletes the file from storage and sets `profile_image_url` to `null`.\n\n**Auth required:** Yes (Bearer token)\n\n**Response:** `200 OK` — `{ message: 'Profile image deleted successfully' }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete My Account",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/user/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "user", "me"]
+            },
+            "description": "Soft-delete the authenticated user's own account. The account is marked inactive but data is retained. The user cannot log in afterwards.\n\n**Auth required:** Yes (Bearer token)\n\n**Response:** `200 OK` — `{ message: 'User deleted successfully' }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🤟 Signs (Reference Images)",
+      "description": "Retrieve the active ASL reference sign images displayed to users. One endpoint per character.",
+      "item": [
+        {
+          "name": "Get Sign by Character",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/signs/A",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "signs", "A"]
+            },
+            "description": "Get the active reference image URL for a given ASL character. Images are served from Cloudinary CDN.\n\n**Auth required:** No\n\n**Path parameter:**\n| Parameter | Type | Description |\n|---|---|---|\n| `character` | string | Single letter A–Z or the word `space` |\n\n**Examples:**\n- `GET /api/v1/signs/A`\n- `GET /api/v1/signs/Z`\n- `GET /api/v1/signs/space`\n\n**Response:** `200 OK` — sign object with `character`, `cloudinary_url`, `is_active`, `created_at`\n\n**Errors:**\n- `404` — character not found or no active image assigned"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🤖 Prediction",
+      "description": "Submit hand images to the ML model for ASL sign prediction. Supports single-frame HTTP and real-time WebSocket streaming.",
+      "item": [
+        {
+          "name": "Predict Sign (HTTP)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/predict/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "predict", ""]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Hand skeleton image — white landmarks on black background. JPEG/PNG/GIF/WebP, max 5 MB.",
+                  "src": []
+                }
+              ]
+            },
+            "description": "Submit a single hand-skeleton image to the ML model and get the predicted ASL sign with a confidence score.\n\nThe model uses **MediaPipe** to extract skeletal landmarks and a trained **MobileNet CNN** to classify the gesture.\n\n**Auth required:** Yes (Bearer token)\n\n**Content-Type:** `multipart/form-data`\n\n**Form field:**\n| Field | Type | Description |\n|---|---|---|\n| `file` | file | Hand skeleton image (white landmarks on black background). Max 5 MB. |\n\n**Response:** `200 OK`\n```json\n{\n  \"success\": true,\n  \"message\": \"Detected gesture: A (95%)\",\n  \"data\": { \"label\": \"A\", \"confidence\": 95.0 },\n  \"query_generated_time\": 0.1234\n}\n```\n\n**Possible label values:**\n| Label | Meaning |\n|---|---|\n| `A`–`Z` | Detected ASL letter |\n| `space` | Space gesture |\n| `del` | Delete/backspace gesture |\n| `nothing` | No gesture detected |\n| `no_hand` | No hand skeleton in image |\n| `uncertain` | Confidence below threshold |\n| `error` | Model processing failed |\n\n**Errors:**\n- `400` — unsupported file type or >5 MB\n- `503` — ML model not loaded"
+          },
+          "response": []
+        },
+        {
+          "name": "Predict Sign (WebSocket)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/predict/ws?token={{accessToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "predict", "ws"],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "description": "JWT access token — WebSocket auth is done via this query param since HTTP headers aren't supported during WS handshake"
+                }
+              ]
+            },
+            "description": "Real-time sign prediction via WebSocket. Connect once and stream raw image frames as binary messages.\n\n> **Note:** To test WebSockets, use Postman's **WebSocket** request type or a tool like `wscat`. This entry is a reference card.\n\n**Auth required:** `?token=<access_token>` query parameter\n\n**Connection URL:**\n```\nws://localhost:8000/api/v1/predict/ws?token=<your_access_token>\n```\n\n**Client → Server:** Send raw binary image data (JPEG/PNG bytes) as a binary WebSocket frame.\n\n**Server → Client** (JSON text frame per image):\n```json\n{ \"success\": true, \"data\": { \"label\": \"A\", \"confidence\": 92.5 }, \"time\": \"0.12s\", \"frame\": 1 }\n```\n\n**WebSocket close codes:**\n| Code | Reason |\n|---|---|\n| `4001` | Invalid/missing token or user not found |\n| `1000` | Normal closure |"
+          },
+          "response": []
+        },
+        {
+          "name": "Prediction Service Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/predict/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "predict", "info"]
+            },
+            "description": "Get metadata about the prediction service — supported gestures, model type, and availability status. Use this to dynamically populate gesture lists in the UI.\n\n**Auth required:** Yes (Bearer token)\n\n**Response:** `200 OK`\n```json\n{\n  \"status\": \"available\",\n  \"model_type\": \"cnn_mediapipe\",\n  \"supported_gestures\": [\"A\",\"B\",...,\"Z\",\"space\",\"del\",\"nothing\"],\n  \"total_classes\": 29\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Prediction Model Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/predict/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "predict", "health"]
+            },
+            "description": "Check whether the ML model is loaded and ready to serve predictions.\n\n**Auth required:** Yes (Bearer token)\n\n**Response `200 OK`** (model ready):\n```json\n{ \"status\": \"healthy\", \"model_loaded\": true, \"model_type\": \"cnn_mediapipe\" }\n```\n\n**Response `503`** (model not loaded):\n```json\n{ \"status\": \"unhealthy\", \"model_loaded\": false, \"model_type\": null }\n```"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📊 Sign Detections",
+      "description": "Log and manage individual sign detection records. Every prediction result can be saved here for analytics and learning history.",
+      "item": [
+        {
+          "name": "Log Detection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/log",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "log"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"detected_sign\": \"A\",\n  \"confidence\": 0.95,\n  \"is_correct\": true,\n  \"session_id\": \"sess_abc123\",\n  \"duration_seconds\": 0.25\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Log a single sign detection result to the database. Call this after every successful prediction to persist it for analytics.\n\n**Auth required:** Yes (Bearer token)\n\n**Request fields:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `detected_sign` | string | ✅ | Predicted sign label (A–Z, space, del, etc.) |\n| `confidence` | float | ✅ | Model confidence, 0.0–1.0 |\n| `is_correct` | boolean | ❌ | Whether user confirmed the prediction |\n| `session_id` | string | ❌ | Groups detections from the same practice session |\n| `duration_seconds` | float | ❌ | Time taken for the detection |\n\n**Response:** `201 Created` — the saved detection record\n\n**Errors:**\n- `422` — confidence out of range or invalid fields\n- `429` — rate limit exceeded"
+          },
+          "response": []
+        },
+        {
+          "name": "Log Detections (Batch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/log/batch",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "log", "batch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"detections\": [\n    {\n      \"detected_sign\": \"A\",\n      \"confidence\": 0.95,\n      \"is_correct\": true,\n      \"session_id\": \"sess_abc123\",\n      \"duration_seconds\": 0.25\n    },\n    {\n      \"detected_sign\": \"B\",\n      \"confidence\": 0.87,\n      \"is_correct\": true,\n      \"session_id\": \"sess_abc123\",\n      \"duration_seconds\": 0.30\n    },\n    {\n      \"detected_sign\": \"C\",\n      \"confidence\": 0.72,\n      \"is_correct\": false,\n      \"session_id\": \"sess_abc123\",\n      \"duration_seconds\": 0.45\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Log multiple detection results in a single request. More efficient than logging one at a time — ideal for flushing a full practice session.\n\n**Auth required:** Yes (Bearer token)\n\n**Accepts:** 1 to 100 detections per request in the `detections` array.\n\n**Response:** `201 Created`\n```json\n{ \"message\": \"3 detections logged\", \"count\": 3 }\n```\n\n**Errors:**\n- `422` — empty list or more than 100 items"
+          },
+          "response": []
+        },
+        {
+          "name": "List Detections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/list?page=1&items_per_page=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "list"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "items_per_page",
+                  "value": "20",
+                  "description": "Items per page (default: 20, max: 100)"
+                }
+              ]
+            },
+            "description": "Retrieve a paginated list of all sign detections logged by the current user, ordered by most recent first.\n\n**Auth required:** Yes (Bearer token)\n\n**Query parameters:**\n| Parameter | Type | Default | Description |\n|---|---|---|---|\n| `page` | int | `1` | Page number |\n| `items_per_page` | int | `20` | Items per page (max 100) |\n\n**Response:** `200 OK` — `{ data: [...], total_count, page, items_per_page }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Detection by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/42",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "42"]
+            },
+            "description": "Retrieve a single detection record by its ID. Only the owner of the detection can access it.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `id` (int) — detection record ID\n\n**Errors:**\n- `404` — not found or belongs to another user"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Detection",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/42",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "42"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_correct\": false,\n  \"confidence\": 0.70\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update a detection record — typically to mark whether the prediction was correct or adjust the confidence value. Only the owner can update their own detections.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `id` (int) — detection record ID\n\n**All body fields are optional:**\n| Field | Type | Description |\n|---|---|---|\n| `is_correct` | boolean | Whether the prediction was correct |\n| `confidence` | float | Updated confidence value (0.0–1.0) |"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Detection",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/detection/42",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "detection", "42"]
+            },
+            "description": "Soft-delete a detection record. The record is marked as deleted but remains in the database for audit purposes. It won't appear in list results or analytics.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `id` (int) — detection record ID\n\n**Response:** `200 OK` — `{ message: 'Detection deleted successfully' }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📈 Dashboard",
+      "description": "Comprehensive learning analytics for the authenticated user.",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/dashboard/?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "dashboard", ""],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "7",
+                  "description": "Number of past days to include in trend data. Range: 1–90. Default: 7."
+                }
+              ]
+            },
+            "description": "Retrieve a comprehensive analytics summary for the current user's sign language practice.\n\n**Auth required:** Yes (Bearer token)\n\n**Query parameters:**\n| Parameter | Type | Default | Description |\n|---|---|---|---|\n| `days` | int | `7` | Past days window for trend data (1–90) |\n\n**Response includes:**\n| Field | Description |\n|---|---|\n| `stats.total_signs_detected` | All-time detection count |\n| `stats.today_signs_count` | Detections logged today |\n| `stats.total_practice_hours` | Total practice duration in hours |\n| `stats.average_accuracy` | Overall correct-prediction ratio (0–1) |\n| `stats.accuracy_change` | Accuracy change vs previous period |\n| `stats.current_streak` | Consecutive days with ≥1 detection |\n| `frequent_signs` | Top detected signs by count |\n| `daily_activity` | Per-day detection counts for the period |\n| `accuracy_distribution` | Breakdown: high/medium/low confidence |\n| `mastered_letters` | Count of letters with consistently high accuracy |\n| `recommended_letters` | Letters the user should practice more |"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "⚙️ Background Tasks",
+      "description": "Enqueue and poll asynchronous background jobs via ARQ/Redis.",
+      "item": [
+        {
+          "name": "Enqueue Task",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tasks/task?message=process_report",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tasks", "task"],
+              "query": [
+                {
+                  "key": "message",
+                  "value": "process_report",
+                  "description": "Payload message for the background task (required)"
+                }
+              ]
+            },
+            "description": "Enqueue an asynchronous background job on the ARQ/Redis worker queue. Rate-limited per user.\n\n**Auth required:** Yes (Bearer token)\n\n**Query parameters:**\n| Parameter | Type | Required | Description |\n|---|---|---|---|\n| `message` | string | ✅ | Payload message for the background task |\n\n**Response:** `200 OK` — `{ id: 'task_7f3e9a12b4c5' }`\n\n**Errors:**\n- `429` — rate limit exceeded"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Task Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tasks/task/task_7f3e9a12b4c5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tasks", "task", "task_7f3e9a12b4c5"]
+            },
+            "description": "Poll the status and result of a previously enqueued background task.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `task_id` (string) — returned by the Enqueue Task endpoint\n\n**Response:** `200 OK`\n```json\n{ \"id\": \"task_7f3e9a12b4c5\", \"status\": \"complete\", \"result\": \"Task completed successfully\" }\n```\n\n**Status values:** `in_progress`, `complete`, `failed`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🏷️ Tiers",
+      "description": "Subscription tier management. Tiers define rate limits per user group. Write operations are admin-only.",
+      "item": [
+        {
+          "name": "Create Tier (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"pro\",\n  \"description\": \"Pro tier with higher limits\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a new subscription tier. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Request fields:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `name` | string | ✅ | Unique tier name (e.g. `free`, `pro`) |\n| `description` | string | ❌ | Human-readable description |\n\n**Response:** `201 Created` — new tier object"
+          },
+          "response": []
+        },
+        {
+          "name": "List Tiers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tiers?page=1&items_per_page=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tiers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "items_per_page",
+                  "value": "10",
+                  "description": "Items per page (default: 10)"
+                }
+              ]
+            },
+            "description": "List all available subscription tiers with pagination.\n\n**Auth required:** Yes (Bearer token)\n\n**Query parameters:**\n| Parameter | Type | Default | Description |\n|---|---|---|---|\n| `page` | int | `1` | Page number |\n| `items_per_page` | int | `10` | Items per page |\n\n**Response:** `200 OK` — `{ data: [...], total_count, page, items_per_page }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Tier by Name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free"]
+            },
+            "description": "Get a single tier by its name.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `name` (string) — tier name (e.g. `free`, `pro`)\n\n**Response:** `200 OK` — tier object"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Tier (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated free tier description\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update an existing tier's details. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `name` (string) — tier name to update\n\n**Response:** `200 OK` — updated tier object"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Tier (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free"]
+            },
+            "description": "Delete a tier by name. **Admin (superuser) only.** Will fail if users are still assigned to this tier.\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `name` (string) — tier name\n\n**Response:** `200 OK` — `{ message: 'Tier deleted successfully' }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "⏱️ Rate Limits",
+      "description": "Configure per-tier API rate limit rules. Admin-only write operations.",
+      "item": [
+        {
+          "name": "Create Rate Limit (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free/rate_limit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free", "rate_limit"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"path\": \"/api/v1/predict/\",\n  \"limit\": 10,\n  \"period\": 60\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a rate limit rule for a specific tier and API path. **Admin (superuser) only.**\n\nExample: limit the `free` tier to 10 prediction requests per minute.\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `tier_name` (string) — the tier to apply this rule to\n\n**Request fields:**\n| Field | Type | Description |\n|---|---|---|\n| `path` | string | API path this rule applies to (e.g. `/api/v1/predict/`) |\n| `limit` | int | Max requests allowed in the time window |\n| `period` | int | Time window in seconds |\n\n**Response:** `201 Created` — new rate limit rule object"
+          },
+          "response": []
+        },
+        {
+          "name": "List Rate Limits for Tier",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free/rate_limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free", "rate_limits"]
+            },
+            "description": "List all rate limit rules configured for a specific tier.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameter:** `tier_name` (string) — tier name\n\n**Response:** `200 OK` — paginated list of rate limit rules"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Rate Limit by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free/rate_limit/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free", "rate_limit", "1"]
+            },
+            "description": "Get a specific rate limit rule by ID.\n\n**Auth required:** Yes (Bearer token)\n\n**Path parameters:**\n| Parameter | Type | Description |\n|---|---|---|\n| `tier_name` | string | Tier name |\n| `id` | int | Rate limit rule ID |\n\n**Response:** `200 OK` — single rate limit rule object"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Rate Limit (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free/rate_limit/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free", "rate_limit", "1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit\": 20,\n  \"period\": 60\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update an existing rate limit rule. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameters:** `tier_name` (string), `id` (int)\n\n**Body fields (all optional):** `limit` (int), `period` (int)\n\n**Response:** `200 OK` — updated rule object"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Rate Limit (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tier/free/rate_limit/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tier", "free", "rate_limit", "1"]
+            },
+            "description": "Delete a rate limit rule. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameters:** `tier_name` (string), `id` (int)\n\n**Response:** `200 OK` — `{ message: 'Rate limit deleted successfully' }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🛡️ Admin — Users",
+      "description": "Full user lifecycle management. All routes in this folder require superuser privileges.",
+      "item": [
+        {
+          "name": "Create User (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/auth/user",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "auth", "user"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new_user\",\n  \"email\": \"new@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"first_name\": \"New\",\n  \"last_name\": \"User\",\n  \"is_superuser\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a user account directly (admin bypass — no email verification). Used to programmatically create test accounts or onboard users.\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Request fields:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `username` | string | ✅ | Unique username |\n| `email` | string | ✅ | Valid email |\n| `password` | string | ✅ | Min 8 characters |\n| `first_name` | string | ❌ | First name |\n| `last_name` | string | ❌ | Last name |\n| `is_superuser` | boolean | ❌ | Grant admin rights (default: false) |\n\n**Response:** `201 Created` — full user profile object"
+          },
+          "response": []
+        },
+        {
+          "name": "List Users (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/users?page=1&items_per_page=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "items_per_page",
+                  "value": "20",
+                  "description": "Items per page (default: 20)"
+                }
+              ]
+            },
+            "description": "List all registered users with pagination. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Query parameters:**\n| Parameter | Type | Default | Description |\n|---|---|---|---|\n| `page` | int | `1` | Page number |\n| `items_per_page` | int | `20` | Items per page |\n\n**Response:** `200 OK` — `{ data: [...], total_count, page, items_per_page }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe"]
+            },
+            "description": "Get the full profile of any user by username. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Response:** `200 OK` — full user profile including tier assignment"
+          },
+          "response": []
+        },
+        {
+          "name": "Update User (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false,\n  \"is_superuser\": false,\n  \"email\": \"updated@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update any field on any user's profile, including `is_active` and `is_superuser` flags. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**All body fields are optional.** Supports same fields as user self-update plus `is_active` and `is_superuser`.\n\n**Response:** `200 OK` — updated user profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Soft Delete User (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe"]
+            },
+            "description": "Soft-delete a user account. Marks the user as inactive but retains all their data. The user cannot log in after this action.\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Response:** `200 OK` — `{ message: 'User deleted successfully' }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Hard Delete User (Admin) ⚠️",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/db_user/john_doe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "db_user", "john_doe"]
+            },
+            "description": "⚠️ **IRREVERSIBLE** — Hard-delete a user and ALL their associated data permanently from the database.\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Response:** `200 OK` — `{ message: 'User permanently deleted' }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Tier (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe/tier",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe", "tier"]
+            },
+            "description": "Get the subscription tier currently assigned to a user. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Response:** `200 OK` — `{ user_id, username, tier_name }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Tier (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe/tier",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe", "tier"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier_name\": \"pro\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Assign or update a user's subscription tier. Changes which rate limits apply to the user. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Body:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `tier_name` | string | ✅ | Name of the tier to assign |\n\n**Response:** `200 OK` — `{ user_id, username, tier_name }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Rate Limits (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/user/john_doe/rate_limits",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "user", "john_doe", "rate_limits"]
+            },
+            "description": "View all effective rate limits that apply to a specific user based on their current tier. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `username` (string)\n\n**Response:** `200 OK` — `{ username, tier_name, rate_limits: [{ path, limit, period }] }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🖼️ Admin — Signs",
+      "description": "Manage the ASL reference sign image library. Each character (A–Z + space) can have multiple Cloudinary versions with one marked as active.",
+      "item": [
+        {
+          "name": "List All Signs (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs"]
+            },
+            "description": "List all sign image records along with which ASL characters are still missing an active image. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Response:** `200 OK` — `{ signs: [...], missing_characters: ['J', 'Z'] }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Sign Image Stats (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs", "stats"]
+            },
+            "description": "Get sign image completion statistics — how many of the 27 characters (A–Z + space) have an active image assigned. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Response:** `200 OK`\n```json\n{ \"total_characters\": 27, \"characters_with_images\": 25, \"completion_percent\": 92.6, \"missing\": [\"J\", \"Z\"] }\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "List Character Images (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs/A/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs", "A", "images"]
+            },
+            "description": "List all Cloudinary image versions ever uploaded for a specific character. Used in the admin UI to select which version to set as active. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `character` (string) — A–Z or `space`\n\n**Response:** `200 OK` — `{ character, images: [{ id, cloudinary_url, is_active, version, file_size, ... }] }`"
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Sign Image (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs/A/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs", "A", "upload"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "description": "Image file to upload and set as the new active sign image for this character",
+                  "src": []
+                }
+              ]
+            },
+            "description": "Upload a new reference sign image for a character. The image is sent to Cloudinary and automatically set as the new active image. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `character` (string) — A–Z or `space`\n\n**Content-Type:** `multipart/form-data`\n\n**Form field:**\n| Field | Type | Description |\n|---|---|---|\n| `file` | file | Image file to upload |\n\n**Response:** `200 OK` — full Cloudinary image record with `cloudinary_url`, `file_size`, `width`, `height`, `version`, etc.\n\n**Errors:**\n- `400` — invalid character value\n- `502` — Cloudinary upload failed"
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Upload Signs (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs/bulk-upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs", "bulk-upload"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "description": "Multiple image files. The character is determined from the filename: A.jpg → A, space.jpg → space.",
+                  "src": []
+                }
+              ]
+            },
+            "description": "Upload multiple sign images at once. The ASL character is inferred from the filename (e.g. `A.jpg` → character `A`, `space.jpg` → `space`). **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Content-Type:** `multipart/form-data`\n\n**Form field:** `files` (multiple file inputs)\n\n**Response:** `200 OK`\n```json\n{ \"uploaded\": [\"A\", \"B\", \"C\"], \"failed\": [], \"count\": 3 }\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "Set Active Sign Image (Admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/signs/A/set-active",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "signs", "A", "set-active"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cloudinary_public_id\": \"asl-signs/A/v1\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Switch the active image for a character to a different previously-uploaded Cloudinary version. Use this to roll back to an older image without re-uploading. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Path parameter:** `character` (string) — A–Z or `space`\n\n**Body:**\n| Field | Type | Required | Description |\n|---|---|---|---|\n| `cloudinary_public_id` | string | ✅ | The Cloudinary public ID of the version to activate |\n\n**Response:** `200 OK` — `{ character, active_image_id, cloudinary_url }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🖥️ Admin — Dashboard",
+      "description": "System-wide analytics and reporting for admins.",
+      "item": [
+        {
+          "name": "Admin Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/dashboard/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "dashboard", ""]
+            },
+            "description": "System-wide analytics — total users, daily active users, total detections, growth percentages, recent activity, top users, and health status of all services (DB, Redis, ML model, WebSocket, Cloudinary). **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Response includes:**\n| Field | Description |\n|---|---|\n| `stats.total_users` | Total registered users |\n| `stats.active_users_today` | Users with at least one detection today |\n| `stats.total_detections` | All-time platform detections |\n| `stats.system_health` | Overall system health percentage |\n| `stats.user_growth_percent` | User growth vs previous period |\n| `recent_activities` | Latest detection events across all users |\n| `system_services` | Status of each infrastructure component |\n| `top_users` | Most active users by detection count |"
+          },
+          "response": []
+        },
+        {
+          "name": "Export User Report (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/dashboard/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "dashboard", "export"]
+            },
+            "description": "Export a full user activity report as a CSV file. Includes username, email, detection counts, accuracy stats, last activity, tier, and join date. **Admin (superuser) only.**\n\n**Auth required:** Yes (superuser Bearer token)\n\n**Response:** `200 OK`\n- Content-Type: `text/csv`\n- Content-Disposition: `attachment; filename=\"signsync_report.csv\"`\n\n**CSV columns:** `username, email, total_detections, average_accuracy, last_activity, tier, joined_at`"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

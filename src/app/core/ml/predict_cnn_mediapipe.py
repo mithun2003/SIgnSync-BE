@@ -1,5 +1,5 @@
 import logging
-
+import os
 from pathlib import Path
 
 import cv2
@@ -99,7 +99,7 @@ def get_cropped_image(img):
 
 
 # --- 4. PREDICTION FUNCTION ---
-DEBUG_MODE = True
+DEBUG_MODE = os.getenv("ML_DEBUG", "false").lower() == "true"
 
 
 def predict_image(image_bytes: bytes):

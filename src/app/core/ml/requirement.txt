@@ -21,3 +21,5 @@ tqdm==4.66.2
 
 echo 'export TF_ENABLE_ONEDNN_OPTS=0' >> ~/.bashrc
 source ~/.bashrc
+
+pip install tensorflow kagglehub opencv-python mediapipe scikit-learn matplotlib seaborn

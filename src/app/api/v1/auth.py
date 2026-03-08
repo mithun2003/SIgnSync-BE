@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.db.database import async_get_db
@@ -16,7 +16,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserRead, status_code=201)
 async def register_user(
-    request: Request,
     user: UserCreate,
     db: Annotated[AsyncSession, Depends(async_get_db)],
 ) -> dict[str, Any]:

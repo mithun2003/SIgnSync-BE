@@ -13,9 +13,11 @@ from ...core.exceptions.http_exceptions import (
     DuplicateValueException,
     ForbiddenException,
     NotFoundException,
+    UnauthorizedException,
 )
+from ...core.security import get_password_hash, verify_password
 from ...crud.crud_users import crud_users
-from ...schemas.user import UserRead, UserResponse, UserUpdate
+from ...schemas.user import PasswordChange, UserRead, UserResponse, UserUpdate
 from ..dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -148,3 +150,28 @@ async def delete_me(
         _delete_old_image(db_user.get("profile_image_url"))
     await crud_users.delete(db=db, username=current_user["username"])
     return {"message": "Account deleted"}
+
+
+# ───────────────────────────────────────────────
+# Change password
+# ───────────────────────────────────────────────
+@router.post("/me/change-password")
+async def change_password(
+    payload: PasswordChange,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+) -> dict[str, str]:
+    """Change the authenticated user's password.
+
+    Verifies the current password before applying the new one.
+    """
+    if not await verify_password(payload.current_password, current_user["hashed_password"]):
+        raise UnauthorizedException("Current password is incorrect")
+
+    new_hash = get_password_hash(payload.new_password)
+    await crud_users.update(
+        db=db,
+        object={"hashed_password": new_hash},
+        id=current_user["id"],
+    )
+    return {"message": "Password changed successfully"}

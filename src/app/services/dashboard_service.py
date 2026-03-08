@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import Date, case, cast, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.app.crud.crud_sign_detections import crud_sign_detections
-from src.app.schemas.sign_detection import (
+from ..crud.crud_sign_detections import crud_sign_detections
+from ..schemas.sign_detection import (
     AccuracyDistribution,
     DailyActivity,
     DashboardResponse,
@@ -16,12 +16,10 @@ from src.app.schemas.sign_detection import (
 
 
 class DashboardService:
-
     def __init__(self, db: AsyncSession):
         self.db = db
 
     async def get_dashboard(self, user_id: int, days: int) -> DashboardResponse:
-
         model = crud_sign_detections.model
         now = datetime.now(UTC)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -33,17 +31,13 @@ class DashboardService:
         # ─────────────────────────
         stats_raw = await crud_sign_detections.aggregate(
             self.db,
-
             func.count(model.id).label("total_signs"),
-
             func.count(
                 case(
                     (model.created_at >= today_start, model.id),
                 )
             ).label("today_signs"),
-
             func.coalesce(func.avg(model.confidence) * 100, 0).label("avg_accuracy"),
-
             func.coalesce(
                 func.avg(
                     case(
@@ -52,12 +46,11 @@ class DashboardService:
                             model.confidence,
                         ),
                     )
-                ) * 100,
+                )
+                * 100,
                 0,
             ).label("yesterday_accuracy"),
-
             func.coalesce(func.sum(model.duration_seconds), 0).label("total_seconds"),
-
             func.coalesce(
                 func.sum(
                     case(
@@ -67,7 +60,6 @@ class DashboardService:
                 ),
                 0,
             ).label("today_seconds"),
-
             one=True,
             user_id=user_id,
             is_deleted=False,
@@ -201,13 +193,13 @@ class DashboardService:
         recent_activities = []
 
         for det in recent_rows:
-            confidence_pct = round(det.confidence * 100)
+            confidence_pct = round(det["confidence"] * 100)
 
             recent_activities.append(
                 RecentActivity(
-                    id=det.id,
+                    id=det["id"],
                     emoji="🎯" if confidence_pct >= 90 else "📚" if confidence_pct >= 70 else "💪",
-                    description=f'Letter "{det.detected_sign}" ({confidence_pct}%)',
+                    description=f'Letter "{det["detected_sign"]}" ({confidence_pct}%)',
                     time_ago="Recently",
                     badge="success" if confidence_pct >= 90 else None,
                     badge_text=f"{confidence_pct}%" if confidence_pct >= 90 else None,

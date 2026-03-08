@@ -9,20 +9,41 @@ from app.schemas.signs import SignRead
 
 router = APIRouter(prefix="/signs", tags=["Public Signs"])
 
-
-# ─────────────────────────────────
-# GET SIGN BY CHARACTER (PUBLIC)
-# ─────────────────────────────────
+ALLOWED_CHARACTERS: list[str] = [chr(i) for i in range(65, 91)] + ["SPACE"]
 
 
-@router.get("/{character}", response_model=SignRead)
-async def get_sign_by_character(character: str, db: Annotated[AsyncSession, Depends(async_get_db)]):
+@router.get("", response_model=list[SignRead], summary="Get all active sign images")
+async def get_all_signs(
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+) -> list:
+    """Return all available sign records (Cloudinary URLs) — no auth required."""
+    result = await crud_signs.get_multi(
+        db=db,
+        schema_to_select=SignRead,
+        return_as_model=True,
+        limit=100,
+    )
+    return result.get("data", [])
 
-    character = character.upper()
 
-    sign = await crud_signs.get(db=db, character=character)
+@router.get("/{character}", response_model=SignRead, summary="Get the active sign image for a character")
+async def get_sign_by_character(
+    character: str,
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+):
+    char = character.upper()
+
+    if char not in ALLOWED_CHARACTERS:
+        raise HTTPException(status_code=400, detail="Invalid character")
+
+    sign = await crud_signs.get(
+        db=db,
+        character=char,
+        schema_to_select=SignRead,
+        return_as_model=True,
+    )
 
     if not sign:
         raise HTTPException(status_code=404, detail="Sign not available")
 
-    return SignRead.model_validate(sign)
+    return sign

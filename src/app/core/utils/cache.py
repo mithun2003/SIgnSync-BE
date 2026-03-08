@@ -337,8 +337,15 @@ def cache(
     return wrapper
 
 
-async def async_get_redis() -> AsyncGenerator[Redis, None]:
-    """Get a Redis client from the pool for each request."""
+async def async_get_redis() -> AsyncGenerator[Redis | None, None]:
+    """Get a Redis client from the pool for each request.
+
+    Yields ``None`` when the Redis cache pool has not been initialised
+    (i.e. ``REDIS_CACHE_ENABLED=false``).  Callers must handle ``None``.
+    """
+    if pool is None:
+        yield None
+        return
     client = Redis(connection_pool=pool)
     try:
         yield client

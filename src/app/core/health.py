@@ -16,7 +16,16 @@ async def check_database_health(db: AsyncSession) -> bool:
         return False
 
 
-async def check_redis_health(redis: Redis) -> bool:
+async def check_redis_health(redis: Redis | None) -> bool | None:
+    """Ping Redis and return health status.
+
+    Returns:
+        ``True``  — reachable
+        ``False`` — unreachable / error
+        ``None``  — Redis is disabled (pool not initialised)
+    """
+    if redis is None:
+        return None
     try:
         await redis.ping()
         return True
