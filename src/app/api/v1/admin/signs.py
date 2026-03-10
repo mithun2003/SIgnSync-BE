@@ -23,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/signs", tags=["Admin ASL Signs"])
 
-ALLOWED_CHARACTERS: list[str] = [chr(i) for i in range(65, 91)] + ["SPACE"]
+# A-Z, SPACE, DEL, plus the emergency/custom signs supported by the ML model.
+# Characters are stored and looked up in uppercase.
+ALLOWED_CHARACTERS: list[str] = (
+    [chr(i) for i in range(65, 91)] + ["SPACE", "DEL"] + ["HELP", "DANGER", "EMERGENCY", "THUMBS_DOWN", "OK_SIGN"]
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

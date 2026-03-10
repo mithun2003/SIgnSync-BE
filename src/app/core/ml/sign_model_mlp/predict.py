@@ -32,7 +32,7 @@ from .config import LABELS_NAME, MODEL_DIR, ONNX_MODEL_NAME
 MODEL_PATH = MODEL_DIR / ONNX_MODEL_NAME
 CLASS_PATH = MODEL_DIR / LABELS_NAME
 
-CONFIDENCE_THRESHOLD = 85.0
+CONFIDENCE_THRESHOLD = 70.0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GLOBAL STATE
