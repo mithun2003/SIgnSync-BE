@@ -12,13 +12,13 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
-      - media-data:/app/media 
+      - media-data:/app/media
     environment:
       - PYTHONPATH=/app/src
       - TF_XLA_FLAGS=--tf_xla_enable_xla_devices=false
       - TF_CPP_MIN_LOG_LEVEL=2
       - CUDA_VISIBLE_DEVICES=-1
-    mem_limit: 512m
+    mem_limit: 1g
 
   db:
     image: postgres:13

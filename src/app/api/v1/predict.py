@@ -1,6 +1,7 @@
 """Prediction API Router — HTTP POST and WebSocket endpoints for sign language prediction."""
 
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -10,7 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.db.database import async_get_db
-from ...core.ml.predict import get_health_status, get_public_info, predict_sign
+from ...core.ml.predict import get_health_status, get_public_info, predict_sign, predict_sign_from_landmarks
 from ...core.ml.schema import HealthResponse, PredictionData, PredictResponse, ServiceInfoResponse
 from ...core.security import TokenType, verify_token
 from ...crud.crud_sign_detections import crud_sign_detections
@@ -34,12 +35,15 @@ async def predict_sign_image(
     db: Annotated[AsyncSession, Depends(async_get_db)],
     file: UploadFile = File(...),
 ):
-    """Predict sign language gesture from skeleton image.
+    """Predict sign language gesture from a raw webcam image.
 
-    **Expected input:** Skeleton image (white hand landmarks on black background)
+    **Expected input:** Any real webcam frame or photo of a hand.
+    MediaPipe landmark extraction runs server-side — no skeleton
+    preprocessing required on the client.
 
     **Returns:**
-    - label: Predicted gesture (A-Z, del, space, nothing) or status (error, no_hand, uncertain)
+    - label: Predicted gesture (A-Z, del, space + emergency signs) or
+             status (error, no_hand)
     - confidence: Confidence percentage (0-100)
     """
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -75,7 +79,6 @@ async def predict_sign_image(
     message_map = {
         "error": "Prediction failed. Please try again.",
         "no_hand": "No hand detected in the image.",
-        "uncertain": f"Low confidence prediction ({result.get('confidence', 0)}%).",
     }
     message = message_map.get(label, f"Detected gesture: {label} ({result.get('confidence', 0)}%)")
 
@@ -123,9 +126,15 @@ async def websocket_prediction(
 
     **Protocol:**
     1. Connect with a valid token
-    2. Send skeleton image as binary bytes
+    2. Send JSON text: `{"landmarks": [{"x": float, "y": float, "z": float}, ...×21]}`
+       (21 MediaPipe NormalizedLandmark objects — already available on the frontend)
     3. Receive JSON: `{ success, data: { label, confidence }, time, frame }`
     4. Repeat for real-time prediction
+
+    **Why landmarks instead of images:**
+    - Frontend MediaPipe is already running for the hand overlay display
+    - 63 floats (~500 B) vs skeleton JPEG (~30 KB) — 60× less bandwidth
+    - No MediaPipe re-run on the backend — ~5× faster per frame
     """
     # Authenticate before accepting the connection
     if not token:
@@ -158,15 +167,31 @@ async def websocket_prediction(
 
     try:
         while True:
-            data = await websocket.receive_bytes()
-
-            if len(data) > 5 * 1024 * 1024:
-                await websocket.send_json({"success": False, "error": "Frame too large (max 5MB)"})
-                continue
+            # Receive JSON text: {"landmarks": [{x, y, z} × 21]}
+            raw = await websocket.receive_text()
 
             start_time = time.time()
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, predict_sign, data)
+
+            try:
+                payload = json.loads(raw)
+                landmarks = payload.get("landmarks", [])
+            except (json.JSONDecodeError, AttributeError):
+                await websocket.send_json({"success": False, "error": "Invalid JSON payload"})
+                continue
+
+            if not landmarks:
+                await websocket.send_json(
+                    {
+                        "success": False,
+                        "data": {"label": "no_hand", "confidence": 0.0},
+                        "time": "0s",
+                        "frame": frame_count,
+                    }
+                )
+                continue
+
+            result = await loop.run_in_executor(None, predict_sign_from_landmarks, landmarks)
             duration = time.time() - start_time
 
             frame_count += 1

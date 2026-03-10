@@ -52,10 +52,11 @@ dependencies = [
     "gunicorn>=23.0.0",
 # 🔬 Machine Learning (CPU-safe)
 
-    "tensorflow-cpu==2.18.0",
+    "joblib>=1.3.0",
+    "onnxruntime>=1.18.0",  # MLP fallback inference (no PyTorch needed at runtime)
     "numpy==2.0.2",
     "opencv-python-headless==4.10.0.84",
-    "scikit-learn>=1.5.0",
+    "scikit-learn==1.6.1",
     "pillow>=10.0.0",
     "mediapipe>=0.10.31",
 

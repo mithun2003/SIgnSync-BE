@@ -23,16 +23,17 @@ async def lifespan_with_admin(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Run the default lifespan initialization and our admin initialization
     async with default_lifespan(app):
-        # Load ML model in a thread pool so it doesn't block the event loop.
-        # TensorFlow's load_model() is CPU-intensive and can take several seconds;
-        # calling it directly in an async function would freeze the entire server.
-        print("🚀 Loading ML model at startup...")
+        # Load SVM model in a thread pool so it doesn't block the event loop.
+        # joblib.load() can take a moment on first load; running it in an executor
+        # keeps the server responsive during startup.
+        print("🚀 Loading SVM model at startup...")
         loop = asyncio.get_event_loop()
         success = await loop.run_in_executor(None, load_ml_model)
         if success:
-            print("✅ ML Model loaded successfully")
+            print("✅ SVM Model loaded successfully")
         else:
-            print("❌ ML Model failed to load")
+            print("❌ SVM Model failed to load — train it first:")
+            print("   python src/app/core/ml/sign_model_pytorch/train_svm_standalone.py")
         # Initialize admin interface if it exists
         if admin:
             # Initialize admin database and setup
