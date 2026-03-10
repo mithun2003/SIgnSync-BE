@@ -768,6 +768,9 @@ def maybe_download_dataset() -> None:
 
 
 def main() -> None:
+    # global must be declared before any use of these names in this scope
+    global IMAGES_PER_LETTER, SYNTHETIC_VARIATIONS, EPOCHS, LEARNING_RATE
+
     parser = argparse.ArgumentParser(description="SignSync MLP training")
     parser.add_argument("--images-per-letter", type=int, default=IMAGES_PER_LETTER)
     parser.add_argument("--synthetic-variations", type=int, default=SYNTHETIC_VARIATIONS)
@@ -775,8 +778,6 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=LEARNING_RATE)
     args = parser.parse_args()
 
-    # Apply CLI overrides to module-level config
-    global IMAGES_PER_LETTER, SYNTHETIC_VARIATIONS, EPOCHS, LEARNING_RATE
     IMAGES_PER_LETTER = args.images_per_letter
     SYNTHETIC_VARIATIONS = args.synthetic_variations
     EPOCHS = args.epochs
