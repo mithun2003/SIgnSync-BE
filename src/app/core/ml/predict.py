@@ -2,18 +2,15 @@
 
 import json
 import logging
-import os
 import threading
 from pathlib import Path
 
 import cv2
 import numpy as np
-
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import img_to_array
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from torchvision.models import EfficientNet_B3_Weights
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PATH CONFIGURATION
@@ -21,7 +18,7 @@ from tensorflow.keras.preprocessing.image import img_to_array
 
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR / "trained_model"
-MODEL_PATH = MODELS_DIR / "sign_language_mobilenet.keras"
+MODEL_PATH = MODELS_DIR / "sign_language_mobilenet.pth"
 CLASS_PATH = MODELS_DIR / "class_names.json"
 
 # Image settings
@@ -29,17 +26,58 @@ IMG_SIZE = (224, 224)
 CONFIDENCE_THRESHOLD = 30.0  # Minimum confidence percentage (0-100)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GLOBAL MODEL LOADING
+# DEVICE & TRANSFORMS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+_TRANSFORM = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize(IMG_SIZE),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225],
+    ),
+])
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GLOBAL MODEL STATE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 logger = logging.getLogger(__name__)
 logger.debug("Looking for models in: %s", MODELS_DIR)
 
-model: object | None = None
+model: nn.Module | None = None
 class_names: list[str] = []
 model_loaded: bool = False
 _model_load_lock = threading.Lock()
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL ARCHITECTURE  (must match train_v2_pytorch.py exactly)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_model(num_classes: int) -> nn.Module:
+    """Recreate EfficientNetB3 + custom head — identical to training script."""
+    net = models.efficientnet_b3(weights=None)
+    in_features = net.classifier[1].in_features
+    net.classifier = nn.Sequential(
+        nn.BatchNorm1d(in_features),
+        nn.Linear(in_features, 512),
+        nn.ReLU(),
+        nn.Dropout(0.4),
+        nn.Linear(512, 256),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(256, num_classes),
+    )
+    return net
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL LOADING
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def load_ml_model() -> bool:
     global model, class_names, model_loaded
@@ -63,14 +101,19 @@ def load_ml_model() -> bool:
         try:
             logger.info("Loading ML model...")
 
-            # compile=False speeds up loading
-            model = load_model(str(MODEL_PATH), compile=False)
-
             with open(CLASS_PATH) as f:
                 class_names = json.load(f)
 
+            # Build architecture then load saved weights
+            net = _build_model(len(class_names))
+            state_dict = torch.load(str(MODEL_PATH), map_location=DEVICE)
+            net.load_state_dict(state_dict)
+            net.to(DEVICE)
+            net.eval()  # disables dropout / batchnorm training mode
+
+            model = net
             model_loaded = True
-            logger.info("ML model loaded successfully (%d classes)", len(class_names))
+            logger.info("ML model loaded on %s (%d classes)", DEVICE, len(class_names))
             return True
 
         except Exception as e:
@@ -78,10 +121,10 @@ def load_ml_model() -> bool:
             model_loaded = False
             return False
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PREPROCESSING FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def validate_skeleton_image(img: np.ndarray) -> bool:
     """Validate if the image is a valid skeleton image.
@@ -93,20 +136,18 @@ def validate_skeleton_image(img: np.ndarray) -> bool:
 
     # Check if image is mostly black (skeleton on black background)
     # But not completely black (mean > 1)
-    mean_value = np.mean(img)
-
-    if mean_value < 1:
+    if np.mean(img) < 1:
         return False  # Completely black = no hand detected
 
     return True
 
 
-def preprocess_skeleton_image(img: np.ndarray) -> np.ndarray:
+def preprocess_skeleton_image(img: np.ndarray) -> torch.Tensor:
     """Preprocess skeleton image for prediction.
 
-    - Convert to RGB if needed
-    - Resize to model input size (224x224)
-    - Normalize to [0, 1]
+    - Convert BGR → RGB
+    - Resize to 224×224
+    - Normalize with ImageNet mean/std
     - Add batch dimension
     """
     # Ensure RGB
@@ -117,22 +158,13 @@ def preprocess_skeleton_image(img: np.ndarray) -> np.ndarray:
     elif img.shape[2] == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    # Resize to model input size
-    img_resized = cv2.resize(img, IMG_SIZE)
-
-    # Normalize to [0, 1]
-    img_array = img_to_array(img_resized) / 255.0
-
-    # Add batch dimension
-    img_batch = np.expand_dims(img_array, axis=0)
-
-    return img_batch
+    tensor = _TRANSFORM(img)        # (3, 224, 224)
+    return tensor.unsqueeze(0)      # (1, 3, 224, 224)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PREDICTION FUNCTION
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 def predict_sign(image_bytes: bytes) -> dict:
     """Predict sign language gesture from skeleton image bytes.
@@ -147,7 +179,6 @@ def predict_sign(image_bytes: bytes) -> dict:
     """
     global model, class_names, model_loaded
 
-    # Check if model is loaded
     # Lazy load model if needed
     if not model_loaded or model is None:
         if not load_ml_model():
@@ -166,15 +197,17 @@ def predict_sign(image_bytes: bytes) -> dict:
             return {"label": "no_hand", "confidence": 0.0}
 
         # 3. Preprocess for model
-        img_batch = preprocess_skeleton_image(img)
+        tensor = preprocess_skeleton_image(img).to(DEVICE)
 
-        # 4. Run prediction
-        predictions = model.predict(img_batch, verbose=0)[0]
+        # 4. Run prediction (no gradients needed for inference)
+        with torch.no_grad():
+            logits = model(tensor)                      # (1, num_classes)
+            probs  = torch.softmax(logits, dim=1)[0]    # (num_classes,)
 
         # 5. Get top prediction
-        pred_idx = int(np.argmax(predictions))
-        confidence = float(np.max(predictions)) * 100
-        label = class_names[pred_idx]
+        pred_idx   = int(probs.argmax())
+        confidence = float(probs[pred_idx]) * 100
+        label      = class_names[pred_idx]
 
         # 6. Check confidence threshold
         # if confidence < CONFIDENCE_THRESHOLD:
@@ -192,22 +225,33 @@ def predict_sign(image_bytes: bytes) -> dict:
 # INFO & UTILITY FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
 def get_public_info() -> dict:
     """Get PUBLIC information about the prediction service."""
     global class_names, model_loaded
 
-    return {"available": model_loaded, "supported_gestures": class_names, "total_gestures": len(class_names)}
+    return {
+        "available": model_loaded,
+        "supported_gestures": class_names,
+        "total_gestures": len(class_names),
+        "device": str(DEVICE),
+    }
 
 
 def get_health_status() -> dict:
     """Simple health check."""
     global model_loaded
 
-    return {"status": "healthy" if model_loaded else "unhealthy", "service": "gesture-prediction"}
+    return {
+        "status": "healthy" if model_loaded else "unhealthy",
+        "service": "gesture-prediction",
+        "device": str(DEVICE),
+    }
 
 
 def reload_model() -> dict:
     """Reload the model (for hot-reloading)"""
+    global model, model_loaded
+    model = None
+    model_loaded = False
     success = load_ml_model()
     return {"success": success, "message": "Model reloaded successfully" if success else "Failed to reload model"}

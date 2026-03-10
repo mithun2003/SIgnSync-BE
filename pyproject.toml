@@ -8,7 +8,6 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.11, <4"
-
 # ---------------- CORE BACKEND DEPENDENCIES ----------------
 dependencies = [
     # FastAPI stack
@@ -18,17 +17,14 @@ dependencies = [
     "httptools>=0.6.1",
     "uuid>=1.30",
     "uuid6>=2024.1.12",
-
     # Config & validation
     "python-dotenv>=1.0.0",
     "pydantic[email]>=2.6.1",
     "pydantic-settings>=2.0.3",
-
     # Auth & security
     "python-jose>=3.3.0",
     "bcrypt>=4.1.1",
     "python-multipart>=0.0.9",
-
     # Database
     "SQLAlchemy>=2.0.25",
     "SQLAlchemy-Utils>=0.41.1",
@@ -36,37 +32,28 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "alembic>=1.13.1",
     "greenlet>=2.0.2",
-
     # CRUD & Admin
     "fastcrud>=0.19.2",
     "crudadmin>=0.4.2",
-
     # Background jobs & cache
     "redis>=5.0.1",
     "arq>=0.25.0",
-
     # HTTP client
     "httpx>=0.26.0",
-
     # Runtime
     "gunicorn>=23.0.0",
-# 🔬 Machine Learning (CPU-safe)
-
-    "tensorflow-cpu==2.18.0",
+    # 🔬 Machine Learning (CPU-only — no CUDA in Docker)
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
     "numpy==2.0.2",
     "opencv-python-headless==4.10.0.84",
     "scikit-learn>=1.5.0",
     "pillow>=10.0.0",
     "mediapipe>=0.10.31",
-
-    "cloudinary>=1.40.0"
+    "cloudinary>=1.40.0",
 ]
-
 # ---------------- OPTIONAL DEPENDENCIES ----------------
 [project.optional-dependencies]
-
-
-
 # 🧪 Development & Testing
 dev = [
     "pytest>=7.4.2",
@@ -74,31 +61,34 @@ dev = [
     "pytest-asyncio>=1.0.0",
     "faker>=26.0.0",
     "pre-commit>=4.3.0",
-
     # Type checking & linting
     "mypy>=1.16.0",
     "types-redis>=4.6.0",
     "ruff>=0.11.13",
 ]
-
 # ---------------- BUILD SYSTEM ----------------
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
 [tool.hatch.build.targets.sdist]
 include = ["src/"]
-
 [tool.hatch.build.targets.wheel]
 include = ["src/"]
 packages = ["src"]
+# ---------------- UV SOURCES (CPU-only torch for Docker) ----------------
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 # ---------------- RUFF (LINTING) ----------------
 [tool.ruff]
 target-version = "py311"
 line-length = 120
 fix = true
-
 [tool.ruff.lint]
 select = ["F", "E", "W", "C", "UP", "I"]
 ignore = [
@@ -107,22 +97,17 @@ ignore = [
     "UP007",
     "E741",
 ]
-
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
-
 [tool.ruff.lint.mccabe]
 max-complexity = 24
-
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
-
 # ---------------- PYTEST ----------------
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::PendingDeprecationWarning:starlette.formparsers",
 ]
-
 # ---------------- MYPY ----------------
 [tool.mypy]
 python_version = "3.11"
@@ -131,13 +116,10 @@ warn_unused_configs = true
 ignore_missing_imports = true
 mypy_path = "src"
 explicit_package_bases = true
-
 [[tool.mypy.overrides]]
 module = "src.app.*"
 disallow_untyped_defs = true
-
 [project.scripts]
 app = "backend.server:app"
-
 [tool.vercel.scripts]
 build = "python build.py"

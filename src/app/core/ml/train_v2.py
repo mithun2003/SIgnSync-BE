@@ -1,42 +1,19 @@
-"""SignSync ASL Recognition — Training Script v2
-═══════════════════════════════════════════════════════════════════ Trains a 29-class ASL model (A-Z, space, del,
-nothing) from the Kaggle "grassknoted/asl-alphabet" dataset.
+"""SignSync ASL Recognition — Training Script v2 (PyTorch)
+═══════════════════════════════════════════════════════════════════
+Trains a 29-class ASL model (A-Z, space, del, nothing) from the
+Kaggle "grassknoted/asl-alphabet" dataset.
 
-WHY THE OLD MODEL WAS INACCURATE
-─────────────────────────────────
-1. Only 5 epochs — model never converged.
-2. MobileNetV2 expects inputs in [-1, 1] via preprocess_input, but
-   training used rescale=1/255 → [0, 1].  Wrong input scale destroys
-   transfer learning.
-3. No fine-tuning phase — only the head was ever trained.
-4. Minimal augmentation.
-
-WHAT THIS SCRIPT DOES DIFFERENTLY
-───────────────────────────────────
-• EfficientNetB3  — 20-30% more accurate than MobileNetV2 on 29 classes.
-• Correct preprocessing: preprocess_input embedded inside the model so
-  training and inference are always consistent.
-• 3-phase training  (frozen 15 ep → partial fine-tune 20 ep → full 10 ep).
-• Rich augmentation (rotation ±20°, zoom, shift, shear, flip).
-• Label smoothing 0.1 to prevent overconfidence on hard letter pairs.
-• Cosine-decay LR with warmup.
-• Class-weight balancing.
-• Removes all-black (no-hand) images before training.
-
-EXPECTED RESULT
-────────────────
-Val accuracy ≥ 95 % on the full 87 k-image dataset.
+Converted from TensorFlow/Keras → PyTorch for native Windows GPU support.
 
 USAGE
 ──────
-    python train_v2.py --test      # smoke test (5 classes, 10 imgs, ~5 min)
-    python train_v2.py --full      # full training (~45 min GPU / 3-4 h CPU)
+    python train_v2_pytorch.py --test      # smoke test (~5 min)
+    python train_v2_pytorch.py --full      # full training (~45 min GPU)
 
 REQUIREMENTS
 ─────────────
-    pip install tensorflow>=2.13 kagglehub opencv-python mediapipe
-                scikit-learn matplotlib seaborn
-    Kaggle API token at ~/.kaggle/kaggle.json
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+    pip install kagglehub opencv-python mediapipe scikit-learn matplotlib seaborn
 """
 
 from __future__ import annotations
@@ -53,39 +30,32 @@ import matplotlib.pyplot as plt
 import mediapipe as mp
 import numpy as np
 import seaborn as sns
-import tensorflow as tf
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
-from tensorflow import keras
-from tensorflow.keras import layers, mixed_precision
-from tensorflow.keras.applications import EfficientNetB3
-from tensorflow.keras.applications.efficientnet import preprocess_input
-from tensorflow.keras.callbacks import (
-    EarlyStopping,
-    ModelCheckpoint,
-)
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from torchvision import datasets, models, transforms
+from torchvision.models import EfficientNet_B3_Weights
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  GPU / MIXED PRECISION SETUP
+#  GPU SETUP
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def setup_hardware() -> None:
-    gpus = tf.config.list_physical_devices("GPU")
-    if gpus:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        # Mixed precision for ~2× speed on Tensor-Core GPUs (RTX 20xx+)
-        try:
-            mixed_precision.set_global_policy("mixed_float16")
-            print(f"✅ GPU found: {[g.name for g in gpus]}  |  mixed_float16 ON")
-        except Exception:
-            print(f"✅ GPU found: {[g.name for g in gpus]}  |  mixed_float16 OFF")
+def setup_hardware() -> torch.device:
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"✅ GPU found: {gpu_name}  |  mixed_float16 (AMP) ON")
     else:
+        device = torch.device("cpu")
         print("ℹ️  No GPU — running on CPU (slower but works)")
+    return device
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -98,15 +68,15 @@ class Config:
     INPUT_SHAPE = (224, 224, 3)
     NUM_CLASSES = 29
 
-    # Paths
     OUTPUT_DIR = Path("output_v2")
     SKELETON_DIR = OUTPUT_DIR / "skeleton_dataset"
-    MODEL_BEST = OUTPUT_DIR / "sign_language_model_best.keras"
-    MODEL_FINAL = OUTPUT_DIR / "sign_language_model_final.keras"
+    MODEL_BEST = OUTPUT_DIR / "sign_language_model_best.pth"
+    MODEL_FINAL = OUTPUT_DIR / "sign_language_model_final.pth"
     CLASS_JSON = OUTPUT_DIR / "class_names.json"
     TASK_FILE = OUTPUT_DIR / "hand_landmarker.task"
     TASK_URL = (
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+        "hand_landmarker/float16/1/hand_landmarker.task"
     )
 
     def __init__(self, test_mode: bool = False) -> None:
@@ -117,7 +87,6 @@ class Config:
             self.batch_size = 8
             self.max_classes = 5
             self.max_imgs_per_class = 10
-            # Phases: frozen, partial, full
             self.epochs = (3, 3, 2)
             print("🧪 TEST MODE — 5 classes, 10 imgs/class, 3+3+2 epochs")
         else:
@@ -129,31 +98,15 @@ class Config:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MEDIAPIPE: SKELETON GENERATION
+#  MEDIAPIPE: SKELETON GENERATION  (unchanged from TF version)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# These are fixed regardless of MediaPipe version
 _HAND_CONNECTIONS: list[tuple[int, int]] = [
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 4),
-    (0, 5),
-    (5, 6),
-    (6, 7),
-    (7, 8),
-    (5, 9),
-    (9, 10),
-    (10, 11),
-    (11, 12),
-    (9, 13),
-    (13, 14),
-    (14, 15),
-    (15, 16),
-    (13, 17),
-    (17, 18),
-    (18, 19),
-    (19, 20),
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20),
     (0, 17),
 ]
 
@@ -175,7 +128,6 @@ def _to_px(val: float, vmin: float, span: float, canvas: int = 224) -> int:
 
 
 def image_to_skeleton(bgr: np.ndarray, detector: mp_vision.HandLandmarker) -> tuple[np.ndarray, bool]:
-    """Convert a BGR hand image to a white-on-black skeleton image (224×224)."""
     canvas = np.zeros((224, 224, 3), dtype=np.uint8)
     rgb = cv2.cvtColor(cv2.resize(bgr, (224, 224)), cv2.COLOR_BGR2RGB)
     mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
@@ -189,40 +141,32 @@ def image_to_skeleton(bgr: np.ndarray, detector: mp_vision.HandLandmarker) -> tu
     ys = [lm.y for lm in lms]
     x0, x1 = min(xs), max(xs)
     y0, y1 = min(ys), max(ys)
-    # Add 15 % padding so fingers aren't clipped at edges
     px = (x1 - x0) * 0.15
     py = (y1 - y0) * 0.15
-    x0 -= px
-    x1 += px
-    y0 -= py
-    y1 += py
+    x0 -= px; x1 += px
+    y0 -= py; y1 += py
     w = x1 - x0
     h = y1 - y0
 
-    # Draw bones
     for s, e in _HAND_CONNECTIONS:
         p1, p2 = lms[s], lms[e]
         cv2.line(
             canvas,
             (_to_px(p1.x, x0, w), _to_px(p1.y, y0, h)),
             (_to_px(p2.x, x0, w), _to_px(p2.y, y0, h)),
-            (255, 255, 255),
-            2,
+            (255, 255, 255), 2,
         )
-    # Draw joints
     for lm in lms:
         cv2.circle(
             canvas,
             (_to_px(lm.x, x0, w), _to_px(lm.y, y0, h)),
-            4,
-            (200, 200, 200),
-            -1,
+            4, (200, 200, 200), -1,
         )
     return canvas, True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATASET DOWNLOAD & SKELETON PRE-GENERATION
+#  DATASET DOWNLOAD & SKELETON PRE-GENERATION  (unchanged)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -230,12 +174,6 @@ def download_dataset() -> str:
     print("\n" + "═" * 60)
     print("  STEP 1 — Downloading ASL Alphabet Dataset from Kaggle")
     print("═" * 60)
-    kaggle_creds = Path.home() / ".kaggle" / "kaggle.json"
-    if not kaggle_creds.exists():
-        raise FileNotFoundError(
-            f"Kaggle credentials not found at {kaggle_creds}.\n"
-            "Go to https://www.kaggle.com/settings → API → Create New Token."
-        )
     base = kagglehub.dataset_download("grassknoted/asl-alphabet")
     train_dir = os.path.join(base, "asl_alphabet_train", "asl_alphabet_train")
     if not os.path.isdir(train_dir):
@@ -255,7 +193,6 @@ def download_mediapipe_task(cfg: Config) -> None:
 
 
 def build_skeleton_dataset(raw_dir: str, cfg: Config) -> Path:
-    """Convert raw photos → skeleton images and save them to cfg.SKELETON_DIR."""
     print("\n" + "═" * 60)
     print("  STEP 2 — Pre-generating Skeleton Dataset")
     print("═" * 60)
@@ -315,7 +252,6 @@ def build_skeleton_dataset(raw_dir: str, cfg: Config) -> Path:
 
 
 def remove_black_images(skeleton_dir: Path) -> None:
-    """Delete images where MediaPipe found no hand (all-black output)."""
     print("\n  Removing all-black (no-hand) images …", end=" ")
     removed = 0
     for img_path in skeleton_dir.rglob("*.jpg"):
@@ -336,234 +272,265 @@ def _skeleton_dataset_exists(skeleton_dir: Path) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MODEL ARCHITECTURE
+#  MODEL ARCHITECTURE  (PyTorch EfficientNetB3)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def build_model(num_classes: int) -> tuple[keras.Model, keras.Model]:
-    """Return (full_model, base_model) where base_model is EfficientNetB3.
+def build_model(num_classes: int) -> nn.Module:
+    """EfficientNetB3 with a custom classification head."""
+    model = models.efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
 
-    The preprocessing layer is EMBEDDED inside the model so that inference
-    only needs to pass a [0, 255] or [0, 1] uint8/float image — the model
-    normalises it correctly regardless of what the caller sends.
+    # Freeze backbone initially
+    for param in model.parameters():
+        param.requires_grad = False
 
-    NOTE: We embed a Rescaling layer so the model always expects inputs in
-    [0, 1] (matching the existing inference code which does img / 255).
-    EfficientNetB3's preprocess_input then converts that to [-1, 1].
-    """
-    inputs = keras.Input(shape=(224, 224, 3), name="input_image")
-
-    # ── Step 1: Undo the /255 done by inference, apply EfficientNet preprocess ──
-    # Inference sends images in [0, 1]; EfficientNetB3 expects [0, 255] → [-1, 1]
-    x = layers.Rescaling(255.0, name="rescale_to_255")(inputs)
-    x = layers.Lambda(preprocess_input, name="efficientnet_preprocess")(x)
-
-    # ── Step 2: EfficientNetB3 backbone ────────────────────────────────────────
-    base = EfficientNetB3(
-        include_top=False,
-        weights="imagenet",
-        input_tensor=x,
+    # Replace classifier head
+    in_features = model.classifier[1].in_features
+    model.classifier = nn.Sequential(
+        nn.BatchNorm1d(in_features),
+        nn.Linear(in_features, 512),
+        nn.ReLU(),
+        nn.Dropout(0.4),
+        nn.Linear(512, 256),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(256, num_classes),
     )
-    base.trainable = False  # frozen at start
-    x = base.output
 
-    # ── Step 3: Classification head ────────────────────────────────────────────
-    x = layers.GlobalAveragePooling2D(name="gap")(x)
-    x = layers.BatchNormalization(name="head_bn1")(x)
-    x = layers.Dense(512, name="head_dense1")(x)
-    x = layers.Activation("relu", name="head_relu1")(x)
-    x = layers.Dropout(0.4, name="head_drop1")(x)
-    x = layers.Dense(256, name="head_dense2")(x)
-    x = layers.Activation("relu", name="head_relu2")(x)
-    x = layers.Dropout(0.3, name="head_drop2")(x)
-    # float32 output even with mixed precision
-    outputs = layers.Dense(num_classes, activation="softmax", dtype="float32", name="predictions")(x)
-
-    model = keras.Model(inputs, outputs, name="ASL_EfficientNetB3")
-    return model, base
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\n  Model         : EfficientNetB3 + custom head")
+    print(f"  Total params  : {total:,}")
+    print(f"  Trainable     : {trainable:,}  (head only — backbone frozen)")
+    return model
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATA GENERATORS
+#  DATA LOADERS  (replaces ImageDataGenerator)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def make_generators(skeleton_dir: Path, cfg: Config):
-    """Return (train_gen, val_gen, class_names, class_weights)."""
+def make_dataloaders(skeleton_dir: Path, cfg: Config):
+    """Return (train_loader, val_loader, class_names, class_weights_tensor)."""
 
-    # Augmentation tuned for skeleton images (white lines on black bg).
-    # Horizontal flip is valid because ASL uses both orientations in the wild.
-    train_datagen = ImageDataGenerator(
-        rescale=1.0 / 255.0,
-        validation_split=0.15,
-        rotation_range=20,
-        width_shift_range=0.12,
-        height_shift_range=0.12,
-        shear_range=0.10,
-        zoom_range=0.15,
-        horizontal_flip=True,
-        fill_mode="constant",
-        cval=0,  # fill new pixels with black (matches background)
+    # EfficientNet pretrained on ImageNet — use official mean/std
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+
+    train_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomRotation(20),
+        transforms.RandomAffine(degrees=0, translate=(0.12, 0.12), shear=10, scale=(0.85, 1.15)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imagenet_mean, std=imagenet_std),
+    ])
+
+    val_transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imagenet_mean, std=imagenet_std),
+    ])
+
+    # Load full dataset then split 85/15
+    full_dataset = datasets.ImageFolder(str(skeleton_dir))
+    class_names  = full_dataset.classes
+
+    total = len(full_dataset)
+    val_size   = int(total * 0.15)
+    train_size = total - val_size
+
+    train_dataset, val_dataset = torch.utils.data.random_split(
+        full_dataset, [train_size, val_size],
+        generator=torch.Generator().manual_seed(42),
     )
-    val_datagen = ImageDataGenerator(
-        rescale=1.0 / 255.0,
-        validation_split=0.15,
-    )
 
-    common_kwargs = {
-        "directory": str(skeleton_dir),
-        "target_size": cfg.IMG_SIZE,
-        "batch_size": cfg.batch_size,
-        "class_mode": "categorical",
-        "color_mode": "rgb",
-        "interpolation": "bilinear",
-    }
+    # Apply transforms
+    train_dataset.dataset.transform = train_transform
+    val_dataset.dataset.transform   = val_transform
 
-    train_gen = train_datagen.flow_from_directory(**common_kwargs, subset="training", shuffle=True)
-    val_gen = val_datagen.flow_from_directory(**common_kwargs, subset="validation", shuffle=False)
-
-    class_names = [k for k, _ in sorted(train_gen.class_indices.items(), key=lambda kv: kv[1])]
-
-    # Class weights so rare/hard classes get equal attention
+    # Class weights for balanced sampling
+    train_labels = [full_dataset.targets[i] for i in train_dataset.indices]
     class_weights = compute_class_weight(
         class_weight="balanced",
         classes=np.arange(len(class_names)),
-        y=train_gen.classes,
+        y=train_labels,
     )
-    cw_dict = dict(enumerate(class_weights))
+    cw_tensor = torch.FloatTensor(class_weights)
 
-    print(f"\n  Train batches : {len(train_gen):,}  ({train_gen.n:,} images)")
-    print(f"  Val   batches : {len(val_gen):,}  ({val_gen.n:,} images)")
+    # Weighted sampler so rare classes are seen equally often
+    sample_weights = [class_weights[l] for l in train_labels]
+    sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=cfg.batch_size,
+        sampler=sampler,
+        num_workers=4,
+        pin_memory=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True,
+    )
+
+    print(f"\n  Train batches : {len(train_loader):,}  ({train_size:,} images)")
+    print(f"  Val   batches : {len(val_loader):,}  ({val_size:,} images)")
     print(f"  Classes       : {class_names}")
 
-    return train_gen, val_gen, class_names, cw_dict
+    return train_loader, val_loader, class_names, cw_tensor
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  COSINE-DECAY LR SCHEDULE
+#  LABEL SMOOTHING LOSS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def cosine_schedule(initial_lr: float, epochs: int, warmup: int = 2):
-    """Return a LearningRateScheduler callback with cosine decay + warmup."""
+class LabelSmoothingCrossEntropy(nn.Module):
+    def __init__(self, smoothing: float = 0.1):
+        super().__init__()
+        self.smoothing = smoothing
 
-    def schedule(epoch: int, _lr: float) -> float:
-        if epoch < warmup:
-            return initial_lr * (epoch + 1) / warmup
-        progress = (epoch - warmup) / max(epochs - warmup, 1)
-        return initial_lr * 0.5 * (1.0 + np.cos(np.pi * progress))
-
-    return keras.callbacks.LearningRateScheduler(schedule, verbose=0)
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        n_classes = logits.size(-1)
+        log_prob  = nn.functional.log_softmax(logits, dim=-1)
+        # Smooth target distribution
+        with torch.no_grad():
+            smooth_targets = torch.full_like(log_prob, self.smoothing / (n_classes - 1))
+            smooth_targets.scatter_(1, targets.unsqueeze(1), 1.0 - self.smoothing)
+        return -(smooth_targets * log_prob).sum(dim=-1).mean()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  TRAINING
+#  ONE EPOCH HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def _compile(model: keras.Model, lr: float) -> None:
-    model.compile(
-        optimizer=keras.optimizers.Adam(lr),
-        loss=keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
-        metrics=["accuracy"],
-    )
+def run_epoch(model, loader, criterion, optimizer, scaler, device, train: bool):
+    model.train() if train else model.eval()
+    total_loss = correct = total = 0
+
+    ctx = torch.enable_grad() if train else torch.no_grad()
+    with ctx:
+        for imgs, labels in loader:
+            imgs, labels = imgs.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+
+            with autocast():
+                logits = model(imgs)
+                loss   = criterion(logits, labels)
+
+            if train:
+                optimizer.zero_grad()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+            total_loss += loss.item() * imgs.size(0)
+            correct    += (logits.argmax(1) == labels).sum().item()
+            total      += imgs.size(0)
+
+    return total_loss / total, correct / total
 
 
-def _callbacks(cfg: Config, lr: float, epochs: int, patience: int = 6):
-    return [
-        ModelCheckpoint(
-            str(cfg.MODEL_BEST),
-            monitor="val_accuracy",
-            save_best_only=True,
-            verbose=1,
-        ),
-        EarlyStopping(
-            monitor="val_accuracy",
-            patience=patience,
-            restore_best_weights=True,
-            verbose=1,
-        ),
-        cosine_schedule(lr, epochs, warmup=min(2, epochs // 3)),
-    ]
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TRAINING  (3-phase: frozen → top-50 unfrozen → full)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
-def train(skeleton_dir: Path, cfg: Config):
+def train_model(skeleton_dir: Path, cfg: Config, device: torch.device):
     print("\n" + "═" * 60)
     print("  STEP 4 — Building Model & Training")
     print("═" * 60)
 
-    train_gen, val_gen, class_names, cw_dict = make_generators(skeleton_dir, cfg)
-    model, base = build_model(len(class_names))
+    train_loader, val_loader, class_names, cw_tensor = make_dataloaders(skeleton_dir, cfg)
+    model     = build_model(len(class_names)).to(device)
+    criterion = LabelSmoothingCrossEntropy(0.1)
+    scaler    = GradScaler()
 
-    total_params = model.count_params()
-    print("\n  Model         : EfficientNetB3 + custom head")
-    print(f"  Total params  : {total_params:,}")
-    print(f"  Num classes   : {len(class_names)}")
-
-    # ── Phase 1: Frozen backbone — train head only ─────────────────────────
+    histories: dict[str, list] = {"train_acc": [], "val_acc": [], "train_loss": [], "val_loss": []}
+    phase_boundaries: list[int] = []
+    best_val_acc = 0.0
     ep1, ep2, ep3 = cfg.epochs
-    print(f"\n{'─' * 60}")
-    print(f"  PHASE 1 — Frozen base  (up to {ep1} epochs, LR=1e-3)")
-    print("─" * 60)
-    _compile(model, 1e-3)
-    h1 = model.fit(
-        train_gen,
-        epochs=ep1,
-        validation_data=val_gen,
-        class_weight=cw_dict,
-        callbacks=_callbacks(cfg, 1e-3, ep1),
-        verbose=1,
-    )
 
-    # ── Phase 2: Unfreeze top-50 base layers ──────────────────────────────
-    print(f"\n{'─' * 60}")
-    print(f"  PHASE 2 — Fine-tune top-50 layers  (up to {ep2} epochs, LR=5e-5)")
-    print("─" * 60)
-    base.trainable = True
-    for layer in base.layers[:-50]:
-        layer.trainable = False
-    trainable2 = sum(tf.size(v).numpy() for v in model.trainable_variables)
-    print(f"  Trainable params now: {trainable2:,}")
-    _compile(model, 5e-5)
-    h2 = model.fit(
-        train_gen,
-        epochs=ep2,
-        validation_data=val_gen,
-        class_weight=cw_dict,
-        callbacks=_callbacks(cfg, 5e-5, ep2, patience=8),
-        verbose=1,
-    )
+    def _run_phase(phase_name: str, epochs: int, lr: float, unfreeze_top: int | None = None):
+        nonlocal best_val_acc
 
-    # ── Phase 3: Unfreeze all — very low LR ───────────────────────────────
-    print(f"\n{'─' * 60}")
-    print(f"  PHASE 3 — Full fine-tune  (up to {ep3} epochs, LR=1e-5)")
-    print("─" * 60)
-    for layer in base.layers:
-        layer.trainable = True
-    _compile(model, 1e-5)
-    h3 = model.fit(
-        train_gen,
-        epochs=ep3,
-        validation_data=val_gen,
-        class_weight=cw_dict,
-        callbacks=_callbacks(cfg, 1e-5, ep3, patience=5),
-        verbose=1,
-    )
+        if unfreeze_top == 0:
+            # Phase 1 — only head is trainable (already set in build_model)
+            pass
+        elif unfreeze_top is not None:
+            # Phase 2 — unfreeze last N backbone layers
+            backbone_layers = list(model.features.children())
+            for block in backbone_layers[:-unfreeze_top]:
+                for p in block.parameters():
+                    p.requires_grad = False
+            for block in backbone_layers[-unfreeze_top:]:
+                for p in block.parameters():
+                    p.requires_grad = True
+        else:
+            # Phase 3 — unfreeze everything
+            for p in model.parameters():
+                p.requires_grad = True
 
-    # Best val_accuracy across all phases
-    all_val_acc = h1.history["val_accuracy"] + h2.history["val_accuracy"] + h3.history["val_accuracy"]
-    best_acc = max(all_val_acc) * 100
-    print(f"\n✅ Training complete — best val accuracy: {best_acc:.2f} %")
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"\n{'─' * 60}")
+        print(f"  {phase_name}  (up to {epochs} epochs, LR={lr})  Trainable: {trainable:,}")
+        print("─" * 60)
+
+        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
+
+        patience_counter = 0
+        patience_limit   = 6 if unfreeze_top == 0 else 8
+
+        for ep in range(1, epochs + 1):
+            tr_loss, tr_acc = run_epoch(model, train_loader, criterion, optimizer, scaler, device, train=True)
+            vl_loss, vl_acc = run_epoch(model, val_loader,   criterion, optimizer, scaler, device, train=False)
+            scheduler.step()
+
+            histories["train_acc"].append(tr_acc)
+            histories["val_acc"].append(vl_acc)
+            histories["train_loss"].append(tr_loss)
+            histories["val_loss"].append(vl_loss)
+
+            flag = ""
+            if vl_acc > best_val_acc:
+                best_val_acc = vl_acc
+                torch.save(model.state_dict(), str(cfg.MODEL_BEST))
+                flag = "  ← best"
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            print(f"  Epoch {ep:3d}/{epochs}  "
+                  f"loss={tr_loss:.4f}  acc={tr_acc:.4f}  "
+                  f"val_loss={vl_loss:.4f}  val_acc={vl_acc:.4f}{flag}")
+
+            if patience_counter >= patience_limit:
+                print(f"  Early stopping (patience={patience_limit})")
+                break
+
+        phase_boundaries.append(len(histories["train_acc"]))
+
+    _run_phase("PHASE 1 — Frozen backbone", ep1, 1e-3, unfreeze_top=0)
+    _run_phase("PHASE 2 — Fine-tune top-3 blocks", ep2, 5e-5, unfreeze_top=3)
+    _run_phase("PHASE 3 — Full fine-tune", ep3, 1e-5, unfreeze_top=None)
+
+    print(f"\n✅ Training complete — best val accuracy: {best_val_acc * 100:.2f} %")
 
     # Save final model + class names
-    model.save(str(cfg.MODEL_FINAL))
+    torch.save(model.state_dict(), str(cfg.MODEL_FINAL))
     with open(cfg.CLASS_JSON, "w") as f:
         json.dump(class_names, f, indent=2)
+
     print(f"   Best model  → {cfg.MODEL_BEST}")
     print(f"   Final model → {cfg.MODEL_FINAL}")
     print(f"   Classes     → {cfg.CLASS_JSON}")
 
-    return (h1, h2, h3), class_names, train_gen, val_gen
+    return histories, phase_boundaries, class_names, model, val_loader
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -571,31 +538,31 @@ def train(skeleton_dir: Path, cfg: Config):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def evaluate(cfg: Config, class_names: list[str], val_gen) -> None:
+def evaluate(cfg: Config, class_names: list[str], model: nn.Module, val_loader, device: torch.device) -> None:
     print("\n" + "═" * 60)
     print("  STEP 5 — Evaluation")
     print("═" * 60)
 
-    best_model = keras.models.load_model(str(cfg.MODEL_BEST))
-    val_gen.reset()
-    preds = best_model.predict(val_gen, verbose=1)
-    y_pred = np.argmax(preds, axis=1)
-    y_true = val_gen.classes[: len(y_pred)]
+    # Load best weights
+    model.load_state_dict(torch.load(str(cfg.MODEL_BEST), map_location=device))
+    model.eval()
+
+    all_preds, all_labels = [], []
+    with torch.no_grad():
+        for imgs, labels in val_loader:
+            imgs = imgs.to(device, non_blocking=True)
+            logits = model(imgs)
+            all_preds.extend(logits.argmax(1).cpu().numpy())
+            all_labels.extend(labels.numpy())
 
     print("\n📊 Classification Report:\n")
-    print(classification_report(y_true, y_pred, target_names=class_names, digits=3))
+    print(classification_report(all_labels, all_preds, target_names=class_names, digits=3))
 
-    cm = confusion_matrix(y_true, y_pred)
-    n = len(class_names)
+    cm = confusion_matrix(all_labels, all_preds)
+    n  = len(class_names)
     plt.figure(figsize=(max(14, n), max(11, n)))
-    sns.heatmap(
-        cm,
-        annot=True,
-        fmt="d",
-        cmap="Blues",
-        xticklabels=class_names,
-        yticklabels=class_names,
-    )
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names)
     plt.title("Confusion Matrix — Best Model", fontsize=14, fontweight="bold", pad=15)
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
@@ -611,34 +578,32 @@ def evaluate(cfg: Config, class_names: list[str], val_gen) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def plot_curves(histories: tuple, cfg: Config) -> None:
-    h1, h2, h3 = histories
-    ep1 = len(h1.history["accuracy"])
-    ep2 = len(h2.history["accuracy"])
-
-    acc = h1.history["accuracy"] + h2.history["accuracy"] + h3.history["accuracy"]
-    val_acc = h1.history["val_accuracy"] + h2.history["val_accuracy"] + h3.history["val_accuracy"]
-    loss = h1.history["loss"] + h2.history["loss"] + h3.history["loss"]
-    val_loss = h1.history["val_loss"] + h2.history["val_loss"] + h3.history["val_loss"]
+def plot_curves(histories: dict, phase_boundaries: list[int], cfg: Config) -> None:
+    acc     = histories["train_acc"]
+    val_acc = histories["val_acc"]
+    loss    = histories["train_loss"]
+    val_loss= histories["val_loss"]
     epochs_range = range(1, len(acc) + 1)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    boundary_labels = ["Fine-tune top blocks", "Full fine-tune"]
 
     for ax, train_m, val_m, title in [
         (ax1, acc, val_acc, "Accuracy"),
         (ax2, loss, val_loss, "Loss"),
     ]:
-        ax.plot(epochs_range, train_m, "b-o", label="Train", markersize=3)
-        ax.plot(epochs_range, val_m, "r-o", label="Validation", markersize=3)
-        ax.axvline(ep1, color="gray", linestyle="--", alpha=0.6, label="Fine-tune top-50")
-        ax.axvline(ep1 + ep2, color="orange", linestyle="--", alpha=0.6, label="Full fine-tune")
+        ax.plot(epochs_range, train_m, "b-o", label="Train",      markersize=3)
+        ax.plot(epochs_range, val_m,   "r-o", label="Validation", markersize=3)
+        for i, b in enumerate(phase_boundaries[:-1]):
+            ax.axvline(b, color=["gray", "orange"][i], linestyle="--", alpha=0.6,
+                       label=boundary_labels[i])
         ax.set_title(title, fontsize=12, fontweight="bold")
         ax.set_xlabel("Epoch")
         ax.set_ylabel(title)
         ax.legend()
         ax.grid(True, alpha=0.3)
 
-    fig.suptitle("Training Curves — EfficientNetB3, 3-Phase", fontsize=13, fontweight="bold")
+    fig.suptitle("Training Curves — EfficientNetB3, 3-Phase (PyTorch)", fontsize=13, fontweight="bold")
     plt.tight_layout()
     out = cfg.OUTPUT_DIR / "training_curves.png"
     plt.savefig(str(out), dpi=120, bbox_inches="tight")
@@ -652,36 +617,35 @@ def plot_curves(histories: tuple, cfg: Config) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train improved ASL model")
+    parser = argparse.ArgumentParser(description="Train improved ASL model (PyTorch)")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--test", action="store_true", help="Quick smoke test")
     mode.add_argument("--full", action="store_true", help="Full production training")
     args = parser.parse_args()
 
     print("\n" + "═" * 60)
-    print("  SignSync ASL Training v2 — EfficientNetB3")
+    print("  SignSync ASL Training v2 — EfficientNetB3 (PyTorch)")
     print("═" * 60)
 
-    setup_hardware()
-    cfg = Config(test_mode=args.test)
+    device = setup_hardware()
+    cfg    = Config(test_mode=args.test)
 
     # ── 1. Data ──
-    raw_dir = download_dataset()
-    download_mediapipe_task(cfg)
-
     if _skeleton_dataset_exists(cfg.SKELETON_DIR):
         print(f"\n✅ Skeleton dataset already exists at {cfg.SKELETON_DIR} — skipping conversion")
     else:
+        raw_dir = download_dataset()
+        download_mediapipe_task(cfg)
         build_skeleton_dataset(raw_dir, cfg)
 
     remove_black_images(cfg.SKELETON_DIR)
 
     # ── 2. Train ──
-    histories, class_names, train_gen, val_gen = train(cfg.SKELETON_DIR, cfg)
+    histories, phase_boundaries, class_names, model, val_loader = train_model(cfg.SKELETON_DIR, cfg, device)
 
     # ── 3. Evaluate & plot ──
-    evaluate(cfg, class_names, val_gen)
-    plot_curves(histories, cfg)
+    evaluate(cfg, class_names, model, val_loader, device)
+    plot_curves(histories, phase_boundaries, cfg)
 
     print("\n" + "═" * 60)
     print("  ALL DONE 🎉")
@@ -690,8 +654,8 @@ def main() -> None:
     print(f"  Class names → {cfg.CLASS_JSON}")
     print()
     print("  ► Deploy:")
-    print(f"    cp {cfg.MODEL_BEST} src/app/core/ml/trained_model/sign_language_mobilenet.keras")
-    print(f"    cp {cfg.CLASS_JSON} src/app/core/ml/trained_model/class_names.json")
+    print(f"    copy {cfg.MODEL_BEST} src\\app\\core\\ml\\trained_model\\sign_language_model.pth")
+    print(f"    copy {cfg.CLASS_JSON} src\\app\\core\\ml\\trained_model\\class_names.json")
 
 
 if __name__ == "__main__":
