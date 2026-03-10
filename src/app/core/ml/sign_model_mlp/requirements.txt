@@ -1,0 +1,12 @@
+# MLP model runtime dependencies (ONNX inference — no PyTorch needed at serve time)
+onnxruntime>=1.18.0
+mediapipe>=0.10.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# Training only (not required for backend deployment)
+# torch>=2.2.0
+# torchvision>=0.17.0
+# scikit-learn>=1.4.0
+# tqdm>=4.65.0
+# kaggle>=1.6.0

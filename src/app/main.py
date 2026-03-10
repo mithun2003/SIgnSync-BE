@@ -23,17 +23,16 @@ async def lifespan_with_admin(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Run the default lifespan initialization and our admin initialization
     async with default_lifespan(app):
-        # Load SVM model in a thread pool so it doesn't block the event loop.
-        # joblib.load() can take a moment on first load; running it in an executor
-        # keeps the server responsive during startup.
-        print("🚀 Loading SVM model at startup...")
+        # Load MLP model in a thread pool so it doesn't block the event loop.
+        # onnxruntime session creation can take a moment on first load.
+        print("🚀 Loading MLP model at startup...")
         loop = asyncio.get_event_loop()
         success = await loop.run_in_executor(None, load_ml_model)
         if success:
-            print("✅ SVM Model loaded successfully")
+            print("✅ MLP Model loaded successfully")
         else:
-            print("❌ SVM Model failed to load — train it first:")
-            print("   python src/app/core/ml/sign_model_pytorch/train_svm_standalone.py")
+            print("❌ MLP Model failed to load — train it first:")
+            print("   Open src/app/core/ml/sign_model_mlp/train_mlp_signsync.ipynb in Google Colab")
         # Initialize admin interface if it exists
         if admin:
             # Initialize admin database and setup
