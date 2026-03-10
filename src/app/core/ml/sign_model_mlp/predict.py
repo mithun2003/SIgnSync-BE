@@ -1,8 +1,8 @@
 """Sign Language Gesture Prediction — MLP (ONNX runtime).
 
 Fallback model: PyTorch MLP exported to ONNX for zero-dependency inference.
-Model file:  src/app/core/ml/sign_model_mlp/trained_model/sign_language_mlp.onnx
-Labels file: src/app/core/ml/sign_model_mlp/trained_model/class_names_mlp.json
+Model file:  src/app/core/ml/trained_model/sign_language_mlp.onnx
+Labels file: src/app/core/ml/trained_model/class_names_mlp.json
 
 Same public interface as src/app/core/ml/predict.py (SVM) — drop-in replacement.
 Two prediction paths:
@@ -32,7 +32,7 @@ from .config import LABELS_NAME, MODEL_DIR, ONNX_MODEL_NAME
 MODEL_PATH = MODEL_DIR / ONNX_MODEL_NAME
 CLASS_PATH = MODEL_DIR / LABELS_NAME
 
-CONFIDENCE_THRESHOLD = 40.0
+CONFIDENCE_THRESHOLD = 85.0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GLOBAL STATE

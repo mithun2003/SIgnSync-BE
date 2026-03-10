@@ -4,9 +4,10 @@ from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
-MODEL_DIR = BASE_DIR / "trained_model"
+# Trained model files live in the shared trained_model/ folder one level up
+MODEL_DIR = BASE_DIR.parent / "trained_model"
 
-# ── Classes (must match SVM — same 33 labels) ────────────────────────────────
+# ── Classes — 33 labels ───────────────────────────────────────────────────────
 ASL_CLASSES: list[str] = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ["space", "del"]
 EMERGENCY_CLASSES: list[str] = ["help", "danger", "emergency", "thumbs_down", "ok_sign"]
 ALL_CLASSES: list[str] = ASL_CLASSES + EMERGENCY_CLASSES  # 33 total
