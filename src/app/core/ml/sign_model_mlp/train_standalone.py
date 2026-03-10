@@ -47,7 +47,6 @@ In  src/app/core/ml/predict.py  change the two import lines at the top:
 """
 
 # ── stdlib / third-party ──────────────────────────────────────────────────────
-import argparse
 import json
 from pathlib import Path
 
@@ -768,21 +767,11 @@ def maybe_download_dataset() -> None:
 
 
 def main() -> None:
-    # global must be declared before any use of these names in this scope
-    global IMAGES_PER_LETTER, SYNTHETIC_VARIATIONS, EPOCHS, LEARNING_RATE
+    """Entry point — reads module-level config constants.
 
-    parser = argparse.ArgumentParser(description="SignSync MLP training")
-    parser.add_argument("--images-per-letter", type=int, default=IMAGES_PER_LETTER)
-    parser.add_argument("--synthetic-variations", type=int, default=SYNTHETIC_VARIATIONS)
-    parser.add_argument("--epochs", type=int, default=EPOCHS)
-    parser.add_argument("--lr", type=float, default=LEARNING_RATE)
-    args = parser.parse_args()
-
-    IMAGES_PER_LETTER = args.images_per_letter
-    SYNTHETIC_VARIATIONS = args.synthetic_variations
-    EPOCHS = args.epochs
-    LEARNING_RATE = args.lr
-
+    To override from a Colab notebook, set attributes on the module before calling main():     module.IMAGES_PER_LETTER
+    = 500     module.EPOCHS = 60     module.main()
+    """
     print("=" * 70)
     print("SignSync — MLP Training (MediaPipe Landmarks)")
     print("=" * 70)
