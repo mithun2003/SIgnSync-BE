@@ -721,18 +721,22 @@ def export_model(model: SignLanguageMLP) -> None:
     torch.save(model.state_dict(), pt_path)
     print(f"\n💾 PyTorch weights → {pt_path}")
 
-    # Export to ONNX
+    # Export to ONNX using classic trace-based exporter (no onnxscript needed)
     onnx_path = OUT_DIR / "sign_language_mlp.onnx"
     dummy = torch.zeros(1, INPUT_DIM)
-    torch.onnx.export(
-        model,
-        dummy,
-        str(onnx_path),
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-        opset_version=17,
-    )
+    model.eval()
+    with torch.no_grad():
+        torch.onnx.export(
+            model,
+            (dummy,),
+            str(onnx_path),
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
+            opset_version=17,
+            do_constant_folding=True,
+            dynamo=False,  # force classic trace-based export — no onnxscript needed
+        )
     print(f"📦 ONNX model       → {onnx_path}")
 
     # Save labels
