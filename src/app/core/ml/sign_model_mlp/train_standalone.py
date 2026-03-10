@@ -751,14 +751,38 @@ def maybe_download_dataset() -> None:
     if DATA_DIR.exists() and any(DATA_DIR.iterdir()):
         print(f"✅ Dataset found at {DATA_DIR}")
         return
-    print("📥 Downloading Kaggle dataset…")
-    import subprocess
 
-    subprocess.run(
-        ["kaggle", "datasets", "download", "-d", KAGGLE_DATASET, "--unzip", "-p", "data"],
-        check=True,
-    )
-    print("✅ Dataset downloaded")
+    print("📥 Downloading Kaggle dataset via kagglehub…")
+    try:
+        import shutil
+
+        import kagglehub
+
+        # kagglehub downloads to a cache dir; we copy to our DATA_DIR
+        cache_path = kagglehub.dataset_download(KAGGLE_DATASET)
+        print(f"   Cache path: {cache_path}")
+
+        # Find the asl_alphabet_train subfolder
+        src = Path(cache_path)
+        train_dir = next(
+            (p for p in src.rglob("asl_alphabet_train") if p.is_dir()),
+            None,
+        )
+        if train_dir is None:
+            # Fallback: use the downloaded root directly
+            train_dir = src
+
+        DATA_DIR.parent.mkdir(parents=True, exist_ok=True)
+        if not DATA_DIR.exists():
+            shutil.copytree(train_dir, DATA_DIR)
+        print(f"✅ Dataset ready at {DATA_DIR}")
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Kaggle download failed: {e}\n"
+            "Make sure you ran Step 2 (kaggle.json upload) before this cell.\n"
+            "Check: !ls ~/.kaggle/kaggle.json"
+        ) from e
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
