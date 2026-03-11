@@ -32,7 +32,10 @@ _SVM_DIR = BASE_DIR / "trained_model"
 MODEL_PATH = _SVM_DIR / "sign_language_svm.joblib"
 CLASS_PATH = _SVM_DIR / "class_names_svm.json"
 
-CONFIDENCE_THRESHOLD = 85.0  # below this % → return "uncertain" instead of a label
+CONFIDENCE_THRESHOLD = 85.0  # A-Z / space / del
+CUSTOM_CONFIDENCE_THRESHOLD = 20.0  # emergency/custom signs (synthetic-trained, real-world variance)
+
+_CUSTOM_SIGNS = {"help", "danger", "emergency", "thumbs_down", "ok_sign"}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GLOBAL STATE  (thread-safe lazy loading)
@@ -219,9 +222,11 @@ def _run_svm(feature_vector: np.ndarray) -> dict:
     proba = _pipeline.predict_proba(feature_vector.reshape(1, -1))[0]  # type: ignore[union-attr]
     pred_idx = int(np.argmax(proba))
     confidence = float(proba[pred_idx]) * 100
-    if confidence < CONFIDENCE_THRESHOLD:
-        return {"label": "uncertain", "confidence": round(confidence, 2)}
     label = _class_names[pred_idx] if pred_idx < len(_class_names) else "error"
+    print(_class_names[pred_idx], "LABEL IS THIS and CONFIDENCE is", confidence)
+    threshold = CUSTOM_CONFIDENCE_THRESHOLD if label in _CUSTOM_SIGNS else CONFIDENCE_THRESHOLD
+    if confidence < threshold:
+        return {"label": "uncertain", "confidence": round(confidence, 2)}
     return {"label": label, "confidence": round(confidence, 2)}
 
 
