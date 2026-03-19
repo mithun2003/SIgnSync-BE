@@ -1,7 +1,7 @@
 import uuid as uuid_pkg
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.db.database import Base
@@ -30,6 +30,7 @@ class User(Base):
     two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     profile_image_url: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    emergency_contacts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=None)
 
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(default_factory=uuid_pkg.uuid4, unique=True)
 

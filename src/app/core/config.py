@@ -157,6 +157,16 @@ class CORSSettings(BaseSettings):
         return self.CORS_ORIGINS
 
 
+class EmailSettings(BaseSettings):
+    EMAIL_ENABLED: bool = False
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "SignSync Alert"
+
+
 class Settings(
     AppSettings,
     SQLiteSettings,
@@ -172,6 +182,7 @@ class Settings(
     CRUDAdminSettings,
     EnvironmentSettings,
     CORSSettings,
+    EmailSettings,
 ):
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", ".env"),

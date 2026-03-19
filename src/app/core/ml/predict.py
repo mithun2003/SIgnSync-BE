@@ -32,7 +32,7 @@ _SVM_DIR = BASE_DIR / "trained_model"
 MODEL_PATH = _SVM_DIR / "sign_language_svm.joblib"
 CLASS_PATH = _SVM_DIR / "class_names_svm.json"
 
-CONFIDENCE_THRESHOLD = 85.0  # A-Z / space / del
+CONFIDENCE_THRESHOLD = 50.0  # A-Z / space / del (lowered from 85 to match real-world hand variations)
 CUSTOM_CONFIDENCE_THRESHOLD = 20.0  # emergency/custom signs (synthetic-trained, real-world variance)
 
 _CUSTOM_SIGNS = {"help", "danger", "emergency", "thumbs_down", "ok_sign"}

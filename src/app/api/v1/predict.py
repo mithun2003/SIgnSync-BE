@@ -7,16 +7,37 @@ import time
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.db.database import async_get_db
-from ...core.ml.predict import get_health_status, get_public_info, predict_sign, predict_sign_from_landmarks
-from ...core.ml.schema import HealthResponse, PredictionData, PredictResponse, ServiceInfoResponse
+from ...core.ml.predict import (
+    get_health_status,
+    get_public_info,
+    predict_sign,
+    predict_sign_from_landmarks,
+)
+from ...core.ml.schema import (
+    HealthResponse,
+    PredictionData,
+    PredictResponse,
+    ServiceInfoResponse,
+)
+from ...core.ml.sign_utils import format_sign_name
 from ...core.security import TokenType, verify_token
 from ...crud.crud_sign_detections import crud_sign_detections
 from ...crud.crud_users import crud_users
 from ...schemas.sign_detection import SignDetectionCreateInternal
+from ...services.email_service import dispatch_help_sign_alerts
 from ..dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -47,7 +68,10 @@ async def predict_sign_image(
     - confidence: Confidence percentage (0-100)
     """
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image file (jpg, png, etc.)")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an image file (jpg, png, etc.)",
+        )
 
     start_time = time.time()
     image_bytes = await file.read()
@@ -63,6 +87,9 @@ async def predict_sign_image(
     confidence = float(result.get("confidence", 0.0)) / 100.0  # normalize 0-100 → 0.0-1.0
     is_success = label not in ["error", "no_hand", "uncertain"]
 
+    # Format label to user-friendly display name
+    display_label = format_sign_name(label)
+
     # Log successful detections to the database
     if is_success:
         try:
@@ -74,18 +101,22 @@ async def predict_sign_image(
             )
             await crud_sign_detections.create(db=db, object=detection_internal)
         except Exception:
-            logger.exception("Failed to log detection for user_id=%s label=%s", current_user["id"], label)
+            logger.exception(
+                "Failed to log detection for user_id=%s label=%s",
+                current_user["id"],
+                label,
+            )
 
     message_map = {
         "error": "Prediction failed. Please try again.",
         "no_hand": "No hand detected in the image.",
     }
-    message = message_map.get(label, f"Detected gesture: {label} ({result.get('confidence', 0)}%)")
+    message = message_map.get(label, f"Detected gesture: {display_label} ({result.get('confidence', 0)}%)")
 
     return PredictResponse(
         success=is_success,
         message=message,
-        data=PredictionData(**result),
+        data=PredictionData(label=display_label, confidence=result.get("confidence", 0)),
         query_generated_time=round(duration, 4),
     )
 
@@ -165,6 +196,9 @@ async def websocket_prediction(
     last_logged_label: str | None = None
     last_logged_time: float = 0.0
 
+    # Help sign email tracking: only send once per WebSocket connection
+    help_email_sent: bool = False
+
     try:
         while True:
             # Receive JSON text: {"landmarks": [{x, y, z} × 21]}
@@ -200,6 +234,9 @@ async def websocket_prediction(
             confidence = float(result.get("confidence", 0.0)) / 100.0  # normalize to 0-1
             is_success = label not in ["error", "no_hand", "uncertain"]
 
+            # Format label to user-friendly display name
+            display_label = format_sign_name(label)
+
             # Log to sign_detection: only on successful detections, and only when
             # the sign changed or at least 1 second has passed since the last log.
             if is_success:
@@ -217,11 +254,49 @@ async def websocket_prediction(
                         last_logged_label = label
                         last_logged_time = now
                     except Exception:
-                        logger.exception("Failed to log detection for user_id=%s label=%s", user_id, label)
+                        logger.exception(
+                            "Failed to log detection for user_id=%s label=%s",
+                            user_id,
+                            label,
+                        )
 
-            await websocket.send_json(
-                {"success": is_success, "data": result, "time": f"{duration:.4f}s", "frame": frame_count}
-            )
+                # Check for help sign and notify configured emergency contacts
+                if label == "help" and not help_email_sent:
+                    dispatch_result = await dispatch_help_sign_alerts(user)
+                    if dispatch_result.recipients:
+                        help_email_sent = True
+                        if dispatch_result.skipped_by_cooldown:
+                            logger.info(
+                                "Help sign detected but duplicate alert suppressed for user_id=%s",
+                                user_id,
+                            )
+                        else:
+                            logger.info(
+                                "Help sign detected! Sent emergency alert email to %d/%d recipients for user_id=%s",
+                                dispatch_result.sent_count,
+                                len(dispatch_result.recipients),
+                                user_id,
+                            )
+                            if dispatch_result.failed_recipients:
+                                logger.warning(
+                                    "Failed to send to: %s",
+                                    ", ".join(dispatch_result.failed_recipients),
+                                )
+
+            print(result)
+            # Send response with formatted display name
+            response_data = {
+                "success": is_success,
+                "data": {**result, "label": display_label},
+                "time": f"{duration:.4f}s",
+                "frame": frame_count,
+            }
+
+            # Add help_email_sent flag to response for frontend
+            if label == "help":
+                response_data["help_email_sent"] = help_email_sent
+
+            await websocket.send_json(response_data)
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: user_id=%s after %d frames", user_id, frame_count)
@@ -229,7 +304,12 @@ async def websocket_prediction(
         logger.exception("WebSocket error for user_id=%s: %s", user_id, e)
         try:
             await websocket.send_json(
-                {"success": False, "data": {"label": "error", "confidence": 0.0}, "time": "0s", "error": str(e)}
+                {
+                    "success": False,
+                    "data": {"label": "error", "confidence": 0.0},
+                    "time": "0s",
+                    "error": str(e),
+                }
             )
             await websocket.close()
         except Exception:

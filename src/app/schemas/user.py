@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -35,6 +35,7 @@ class UserRead(BaseModel):
     language: str
     two_factor_enabled: bool
     tier_id: int | None
+    emergency_contacts: list[EmailStr] | None = None
 
 
 class UserCreate(UserBase):
@@ -65,6 +66,7 @@ class UserUpdate(BaseModel):
     language: str | None = None
     two_factor_enabled: bool | None = None
     profile_image_url: str | None = None
+    emergency_contacts: list[EmailStr] | None = None
 
 
 class UserUpdateInternal(UserUpdate):
@@ -102,3 +104,45 @@ class PasswordChange(BaseModel):
 
 class UserResponse(CommonResponse):
     data: UserRead
+
+
+class EmergencyContactsPayload(BaseModel):
+    emails: list[EmailStr]
+
+
+class EmergencyContactUpdatePair(BaseModel):
+    old_email: EmailStr
+    new_email: EmailStr
+
+
+class EmergencyContactsBatchUpdatePayload(BaseModel):
+    add: list[EmailStr] = []
+    remove: list[EmailStr] = []
+    update: list[EmergencyContactUpdatePair] = []
+
+
+class EmergencyContactsBatchResult(BaseModel):
+    operation: Literal["batch_update"] = "batch_update"
+    added: list[EmailStr] = []
+    removed: list[EmailStr] = []
+    updated: list[EmailStr] = []
+    unchanged: list[EmailStr] = []
+    emails: list[EmailStr]
+
+
+class EmergencyContactsResponse(CommonResponse):
+    data: EmergencyContactsPayload
+
+
+class EmergencyContactsBatchResponse(CommonResponse):
+    data: EmergencyContactsBatchResult
+
+
+class HelpMailData(BaseModel):
+    message: str
+    recipients: list[EmailStr]
+    sent_count: int
+
+
+class HelpMailResponse(CommonResponse):
+    data: HelpMailData

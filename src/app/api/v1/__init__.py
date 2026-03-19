@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .alerts import router as alerts_router
 from .auth import router as auth_router
 from .dashboard import router as dashboard_router
 from .health import router as health_router
@@ -25,5 +26,6 @@ router.include_router(tiers_router)
 router.include_router(rate_limits_router)
 router.include_router(dashboard_router)
 router.include_router(sign_detections_router)
+router.include_router(alerts_router)
 
 router.include_router(auth_router)

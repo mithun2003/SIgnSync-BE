@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.db.database import async_get_db
 from ...core.exceptions.http_exceptions import (
+    BadRequestException,
     DuplicateValueException,
     ForbiddenException,
     NotFoundException,
@@ -17,7 +18,17 @@ from ...core.exceptions.http_exceptions import (
 )
 from ...core.security import get_password_hash, verify_password
 from ...crud.crud_users import crud_users
-from ...schemas.user import PasswordChange, UserRead, UserResponse, UserUpdate
+from ...schemas.user import (
+    EmergencyContactsBatchResponse,
+    EmergencyContactsBatchResult,
+    EmergencyContactsBatchUpdatePayload,
+    EmergencyContactsPayload,
+    EmergencyContactsResponse,
+    PasswordChange,
+    UserRead,
+    UserResponse,
+    UserUpdate,
+)
 from ..dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -28,6 +39,17 @@ MEDIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def _normalize_emails(emails: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for email in emails:
+        value = email.strip().lower()
+        if value and value not in seen:
+            seen.add(value)
+            normalized.append(value)
+    return normalized
 
 
 def _delete_old_image(profile_image_url: str | None) -> None:
@@ -175,3 +197,126 @@ async def change_password(
         id=current_user["id"],
     )
     return {"message": "Password changed successfully"}
+
+
+# ───────────────────────────────────────────────
+# Emergency contacts management
+# ───────────────────────────────────────────────
+@router.get("/me/emergency-contacts", response_model=EmergencyContactsResponse)
+async def get_emergency_contacts(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+):
+    """Get the current user's emergency contact email list."""
+    db_user = await crud_users.get(db=db, id=current_user["id"])
+    if not db_user:
+        raise NotFoundException("User not found")
+
+    emergency_contacts = db_user.get("emergency_contacts") or []
+    return EmergencyContactsResponse(data=EmergencyContactsPayload(emails=emergency_contacts))
+
+
+@router.put("/me/emergency-contacts", response_model=EmergencyContactsResponse)
+async def update_emergency_contacts(
+    payload: EmergencyContactsPayload,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+):
+    """Update the current user's emergency contact email list."""
+    db_user = await crud_users.get(db=db, id=current_user["id"])
+    if not db_user:
+        raise NotFoundException("User not found")
+
+    unique_emails = _normalize_emails([str(email) for email in payload.emails])
+
+    update_data = UserUpdate(emergency_contacts=unique_emails)
+    await crud_users.update(db=db, object=update_data, id=current_user["id"])
+
+    logger.info("Emergency contacts updated for user_id=%s: %d contacts", current_user["id"], len(unique_emails))
+    return EmergencyContactsResponse(data=EmergencyContactsPayload(emails=unique_emails))
+
+
+@router.patch("/me/emergency-contacts", response_model=EmergencyContactsBatchResponse)
+async def batch_update_emergency_contacts(
+    payload: EmergencyContactsBatchUpdatePayload,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+):
+    """Batch add/remove/update emergency contact emails for the current user."""
+    db_user = await crud_users.get(db=db, id=current_user["id"])
+    if not db_user:
+        raise NotFoundException("User not found")
+
+    current_list = _normalize_emails([str(email) for email in (db_user.get("emergency_contacts") or [])])
+    current_set = set(current_list)
+
+    add_list = _normalize_emails([str(email) for email in payload.add])
+    remove_list = _normalize_emails([str(email) for email in payload.remove])
+
+    update_pairs_raw = [
+        (str(item.old_email).strip().lower(), str(item.new_email).strip().lower()) for item in payload.update
+    ]
+    update_pairs: list[tuple[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for old_email, new_email in update_pairs_raw:
+        pair = (old_email, new_email)
+        if pair not in seen_pairs:
+            seen_pairs.add(pair)
+            update_pairs.append(pair)
+
+    added: list[str] = []
+    removed: list[str] = []
+    updated: list[str] = []
+    unchanged: list[str] = []
+    result_set = set(current_set)
+
+    for email in add_list:
+        if email in result_set:
+            unchanged.append(email)
+            continue
+        result_set.add(email)
+        added.append(email)
+
+    for email in remove_list:
+        if email in result_set:
+            result_set.remove(email)
+            removed.append(email)
+        else:
+            unchanged.append(email)
+
+    for old_email, new_email in update_pairs:
+        if old_email == new_email:
+            if old_email in result_set:
+                unchanged.append(old_email)
+                continue
+            raise BadRequestException(f"Cannot update missing contact: {old_email}")
+        if old_email not in result_set:
+            raise BadRequestException(f"Cannot update missing contact: {old_email}")
+        result_set.remove(old_email)
+        result_set.add(new_email)
+        updated.append(new_email)
+
+    final_emails = sorted(result_set)
+    await crud_users.update(
+        db=db,
+        object=UserUpdate(emergency_contacts=final_emails),
+        id=current_user["id"],
+    )
+
+    logger.info(
+        "Emergency contacts batch updated for user_id=%s added=%d removed=%d updated=%d total=%d",
+        current_user["id"],
+        len(added),
+        len(removed),
+        len(updated),
+        len(final_emails),
+    )
+    return EmergencyContactsBatchResponse(
+        data=EmergencyContactsBatchResult(
+            added=added,
+            removed=removed,
+            updated=updated,
+            unchanged=_normalize_emails(unchanged),
+            emails=final_emails,
+        )
+    )

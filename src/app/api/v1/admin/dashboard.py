@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....api.dependencies import get_current_superuser
 from ....core.db.database import async_get_db
 from ....core.ml.predict import get_health_status
+from ....core.ml.sign_utils import format_sign_name
 from ....crud.crud_admin import detection_crud, user_crud
 from ....models.sign_detection import SignDetection
 from ....models.user import User
@@ -158,6 +159,7 @@ async def get_admin_dashboard(
 
         username = det.get("user_username", det.get("username", "User"))
         sign = det.get("detected_sign", "?")
+        display_sign = format_sign_name(sign)
         conf = det.get("confidence", 0)
 
         recent_activities.append(
@@ -165,7 +167,7 @@ async def get_admin_dashboard(
                 "id": i + 1,
                 "type": "detection",
                 "emoji": "🤟",
-                "title": f"{username} detected '{sign}'",
+                "title": f"{username} detected '{display_sign}'",
                 "description": f"Confidence: {_format_confidence(conf)}",
                 "time_ago": _format_time_ago(elapsed),
             }

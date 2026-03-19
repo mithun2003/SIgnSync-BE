@@ -42,12 +42,11 @@ Step 5 — On your target device (NO dataset, NO GPU needed):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   A-Z (26)       — real images from Kaggle ASL dataset
   space, del (2) — real images from Kaggle ASL dataset
-  help           — SYNTHETIC: open flat palm, 5 fingers spread
-  danger         — SYNTHETIC: ILY sign (index + pinky + thumb out)
-  emergency      — SYNTHETIC: thumbs-up fist
-  thumbs_down    — SYNTHETIC: fist, thumb pointing straight DOWN
-  ok_sign        — SYNTHETIC: thumb+index circle, other 3 fingers curled DOWN
-                   (different from ASL F where they point UP)
+  help           — real images: "five" gesture (open palm, all fingers spread)
+  danger         — synthetic fallback (ilv gesture is not available in the dataset)
+  emergency      — real images: "zero" gesture (fist)
+  thumbs_down    — real images: "down" gesture (not ok)
+  ok_sign        — real images: "up" gesture (thumbs up)
 
 Why SVM beats CNN for hand signs:
   CNN (64×64×3 = 12,288 inputs): sees background, lighting, clothes
@@ -80,6 +79,7 @@ from tqdm import tqdm
 RANDOM_SEED = 42
 KAGGLE_DATASET = "grassknoted/asl-alphabet"
 MODEL_DIR = Path("trained_model")
+EMERGENCY_DATASET = "anoshal/hand-gesture-recognition-dataset-one-hand"
 
 ASL_CLASSES: list[str] = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ["space", "del"]
 
@@ -90,6 +90,13 @@ EMERGENCY_CLASSES: list[str] = [
     "thumbs_down",
     "ok_sign",
 ]
+
+GESTURE_TO_EMERGENCY_MAP: dict[str, str] = {
+    "down": "thumbs_down",
+    "five": "help",
+    "up": "ok_sign",
+    "zero": "emergency",
+}
 
 ALL_CLASSES: list[str] = ASL_CLASSES + EMERGENCY_CLASSES  # 33 total
 
@@ -454,6 +461,117 @@ def _download_asl() -> Path:
         sys.exit(1)
 
 
+def _download_emergency_dataset() -> Path | None:
+    """Download hand gesture dataset for emergency signs."""
+    try:
+        import kagglehub
+    except ImportError:
+        print("Warning: kagglehub not installed. Emergency gesture images will be skipped.")
+        return None
+
+    print(f"\nAttempting to download emergency gesture dataset '{EMERGENCY_DATASET}' from Kaggle …")
+    try:
+        dataset_path = Path(kagglehub.dataset_download(EMERGENCY_DATASET))
+        archive_path = dataset_path.parent / f"{dataset_path.name}.archive"
+        if archive_path.exists():
+            import tarfile
+
+            print(f"Extracting archive: {archive_path.name}")
+            try:
+                with tarfile.open(archive_path, "r") as tar:
+                    tar.extractall(path=dataset_path.parent)
+            except Exception as exc:
+                print(f"Warning: Archive extraction failed: {exc}")
+        return dataset_path
+    except Exception as exc:
+        print(f"Warning: Emergency dataset download failed: {exc}")
+        print("  → Using synthetic emergency signs instead")
+        return None
+
+
+def extract_emergency_landmarks(
+    src_dir: Path,
+    emergency_map: dict[str, str],
+    emergency_classes: list[str],
+    max_per_class: int = 500,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Extract MediaPipe landmarks from gesture images for emergency classes."""
+    X_rows: list[np.ndarray] = []
+    y_rows: list[int] = []
+
+    possible_sources = [
+        src_dir / "Dataset_RGB" / "Dataset_RGB",
+        src_dir / "Dataset_RGB",
+        src_dir,
+        src_dir / "gesture",
+        src_dir / "gestures",
+        src_dir / "Dataset_Binary",
+    ]
+
+    if src_dir.is_dir():
+        for item in src_dir.iterdir():
+            if item.is_dir():
+                possible_sources.append(item)
+                for subitem in item.iterdir():
+                    if subitem.is_dir():
+                        possible_sources.append(subitem)
+
+    emg_src: Path | None = None
+    for cand in possible_sources:
+        if not cand.is_dir():
+            continue
+        has_gesture = False
+        for gesture_name in emergency_map:
+            for variant in [gesture_name, gesture_name.upper(), gesture_name.lower()]:
+                if (cand / variant).is_dir():
+                    has_gesture = True
+                    break
+            if has_gesture:
+                break
+        if has_gesture:
+            emg_src = cand
+            print(f"  [emergency] Found gesture dataset: {cand}")
+            break
+
+    if emg_src is None:
+        print(f"  [emergency] No gesture directories found in {src_dir} — will use synthetic fallback")
+        return np.empty((0, 82), dtype=np.float32), np.empty(0, dtype=np.int64)
+
+    for gesture_name, emergency_class in emergency_map.items():
+        cls_idx = emergency_classes.index(emergency_class)
+        gesture_dir = None
+        for variant in [gesture_name, gesture_name.upper(), gesture_name.lower()]:
+            cand = emg_src / variant
+            if cand.is_dir():
+                gesture_dir = cand
+                break
+
+        if gesture_dir is None:
+            print(f"  [{emergency_class}] Gesture folder '{gesture_name}' not found — skipping")
+            continue
+
+        images = [p for p in sorted(gesture_dir.iterdir()) if p.suffix.lower() in _IMG_EXTS][:max_per_class]
+        ok = fail = 0
+        for img_path in tqdm(images, desc=f"  [{emergency_class}]({gesture_name})", leave=False):
+            img = cv2.imread(str(img_path))
+            if img is None:
+                fail += 1
+                continue
+            vec = extract_landmarks_array(img)
+            if vec is None:
+                fail += 1
+                continue
+            X_rows.append(vec)
+            y_rows.append(cls_idx)
+            ok += 1
+
+        print(f"  [{emergency_class}] {ok} landmarks from '{gesture_name}'  ({fail} skipped — no hand)")
+
+    if not X_rows:
+        return np.empty((0, 82), dtype=np.float32), np.empty(0, dtype=np.int64)
+    return np.array(X_rows, dtype=np.float32), np.array(y_rows, dtype=np.int64)
+
+
 def extract_asl_landmarks(
     src_dir: Path,
     classes: list[str],
@@ -509,6 +627,12 @@ def main() -> None:
     )
     parser.add_argument("--data-dir", type=Path, default=None, help="Path to raw ASL dataset folder (skips download)")
     parser.add_argument(
+        "--emergency-dir",
+        type=Path,
+        default=None,
+        help="Path to emergency gesture dataset folder (skips Kaggle download for emergency signs)",
+    )
+    parser.add_argument(
         "--max-per-class",
         type=int,
         default=1000,
@@ -524,7 +648,7 @@ def main() -> None:
     print("=" * 65)
     print(f"  Classes       : {len(ALL_CLASSES)} total")
     print(f"  ASL (dataset) : {len(ASL_CLASSES)}")
-    print(f"  Emergency      : {len(EMERGENCY_CLASSES)} (synthetic, no images needed)")
+    print(f"  Emergency      : {len(EMERGENCY_CLASSES)} (real images + synthetic fallback)")
     print("=" * 65)
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -568,16 +692,65 @@ def main() -> None:
         sys.exit(1)
     print(f"\nASL total: {len(X_asl)} samples\n")
 
-    # ── Generate synthetic emergency landmarks ─────────────────────────────
-    print("Generating synthetic landmarks for emergency signs …")
+    # ── Emergency signs: real dataset + synthetic fallback/supplement ───────
+    n_asl = len(asl_classes)
     X_emg_rows: list[np.ndarray] = []
     y_emg_rows: list[int] = []
-    n_asl = len(asl_classes)
+    emergency_src: Path | None = None
+
+    if args.emergency_dir:
+        src = Path(args.emergency_dir)
+        X_emg, y_emg = extract_emergency_landmarks(src, GESTURE_TO_EMERGENCY_MAP, EMERGENCY_CLASSES, args.max_per_class)
+        if len(X_emg) > 0:
+            X_emg_rows.append(X_emg)
+            y_emg_rows.extend((n_asl + y_emg).tolist())
+            emergency_src = src
+            print(f"Emergency source (--emergency-dir): {src}\n")
+
+    if emergency_src is None and args.data_dir:
+        src = Path(args.data_dir)
+        X_emg, y_emg = extract_emergency_landmarks(src, GESTURE_TO_EMERGENCY_MAP, EMERGENCY_CLASSES, args.max_per_class)
+        if len(X_emg) > 0:
+            X_emg_rows.append(X_emg)
+            y_emg_rows.extend((n_asl + y_emg).tolist())
+            emergency_src = src
+            print(f"Emergency source (from --data-dir): {src}\n")
+
+    if emergency_src is None:
+        raw_emg = _download_emergency_dataset()
+        if raw_emg is not None:
+            X_emg, y_emg = extract_emergency_landmarks(
+                raw_emg, GESTURE_TO_EMERGENCY_MAP, EMERGENCY_CLASSES, args.max_per_class
+            )
+            if len(X_emg) > 0:
+                X_emg_rows.append(X_emg)
+                y_emg_rows.extend((n_asl + y_emg).tolist())
+                emergency_src = raw_emg
+                print(f"Emergency source (Kaggle download): {raw_emg}\n")
+
+    print("Generating synthetic landmarks for emergency signs …")
     for i, sign in enumerate(EMERGENCY_CLASSES):
-        samples = generate_synthetic_samples(_SYNTHETIC_SIGNS[sign], n_samples=args.synthetic_per_sign)
-        X_emg_rows.append(samples)
-        y_emg_rows.extend([n_asl + i] * len(samples))
-        print(f"  [{sign}] {len(samples)} synthetic samples  (no images needed)")
+        class_idx = n_asl + i
+        real_count = sum(1 for yv in y_emg_rows if yv == class_idx)
+        if sign == "danger":
+            synthetic_count = args.synthetic_per_sign
+        elif real_count == 0:
+            synthetic_count = args.synthetic_per_sign
+        elif real_count < args.synthetic_per_sign // 2:
+            synthetic_count = args.synthetic_per_sign - real_count
+        else:
+            synthetic_count = args.synthetic_per_sign // 3
+
+        if synthetic_count > 0:
+            samples = generate_synthetic_samples(_SYNTHETIC_SIGNS[sign], n_samples=synthetic_count)
+            X_emg_rows.append(samples)
+            y_emg_rows.extend([class_idx] * len(samples))
+            reason = "supplement"
+            if real_count == 0:
+                reason = "no real images found"
+            if sign == "danger":
+                reason = "ilv gesture not in dataset"
+            print(f"  [{sign}] {len(samples)} synthetic samples  ({reason})")
 
     X_emg = np.vstack(X_emg_rows)
     y_emg = np.array(y_emg_rows, dtype=np.int64)
