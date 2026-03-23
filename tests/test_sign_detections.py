@@ -39,7 +39,13 @@ class TestLogDetection:
     """Tests for POST /detection/log."""
 
     @pytest.mark.asyncio
-    async def test_log_detection_success(self, mock_db, current_user_dict, detection_create_payload, sample_detection_read):
+    async def test_log_detection_success(
+        self,
+        mock_db,
+        current_user_dict,
+        detection_create_payload,
+        sample_detection_read,
+    ):
         """Authenticated user can log a sign detection."""
         from src.app.api.v1.sign_detections import log_detection
         from src.app.schemas.sign_detection import SignDetectionCreate
@@ -55,7 +61,13 @@ class TestLogDetection:
             mock_crud.create.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_log_detection_sets_user_id(self, mock_db, current_user_dict, detection_create_payload, sample_detection_read):
+    async def test_log_detection_sets_user_id(
+        self,
+        mock_db,
+        current_user_dict,
+        detection_create_payload,
+        sample_detection_read,
+    ):
         """The user_id from the auth token is injected into the detection record."""
         from src.app.api.v1.sign_detections import log_detection
         from src.app.schemas.sign_detection import SignDetectionCreate
@@ -71,6 +83,37 @@ class TestLogDetection:
             created_object = call_kwargs.get("object")
             assert created_object is not None
             assert created_object.user_id == current_user_dict["id"]
+
+    @pytest.mark.asyncio
+    async def test_log_detection_accepts_long_custom_sign_label(
+        self,
+        mock_db,
+        current_user_dict,
+        sample_detection_read,
+    ):
+        """Custom labels like thumbs_down should be accepted and persisted."""
+        from src.app.api.v1.sign_detections import log_detection
+        from src.app.schemas.sign_detection import SignDetectionCreate
+
+        payload = SignDetectionCreate(
+            detected_sign="thumbs_down",
+            confidence=0.88,
+            is_correct=True,
+            session_id="sess_xyz",
+            duration_seconds=2.0,
+        )
+
+        response_with_custom_label = {**sample_detection_read, "detected_sign": "thumbs_down"}
+        with patch("src.app.api.v1.sign_detections.crud_sign_detections") as mock_crud:
+            mock_crud.create = AsyncMock(return_value=response_with_custom_label)
+
+            result = await log_detection(payload, current_user_dict, mock_db)
+
+            assert result["detected_sign"] == "thumbs_down"
+            call_kwargs = mock_crud.create.call_args.kwargs
+            created_object = call_kwargs.get("object")
+            assert created_object is not None
+            assert created_object.detected_sign == "thumbs_down"
 
 
 class TestGetDetection:

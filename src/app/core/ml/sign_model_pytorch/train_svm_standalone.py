@@ -185,7 +185,7 @@ _TIP_PAIRS = [(i, j) for i in range(5) for j in range(i + 1, 5)]  # 10 pairs
 
 
 def _compute_geometric_features(pts_norm: np.ndarray) -> np.ndarray:
-    """Compute 19 geometric features from a (21, 3) normalised landmark array.
+    """Compute 19 geometric features from a (21, 3) normalized landmark array.
 
     Makes visually similar signs (e.g. B vs W) easily separable:
     - Tip distances:   B has tightly clustered tips; W has spread-out tips
