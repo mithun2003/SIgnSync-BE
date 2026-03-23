@@ -35,18 +35,18 @@ services:
       timeout: 5s
       retries: 5
 
-  # pgadmin:
-  #   image: dpage/pgadmin4:latest
-  #   env_file:
-  #     - ./src/.env
-  #   ports:
-  #     - "5050:80"
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   volumes:
-  #     - pgadmin-data:/var/lib/pgadmin
-  #   mem_limit: 256m
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    env_file:
+      - ./src/.env
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    mem_limit: 256m
 
   create_superuser:
     build:
@@ -67,5 +67,5 @@ services:
 
 volumes:
   postgres-data:
-  # pgadmin-data:
+  pgadmin-data:
   media-data:
